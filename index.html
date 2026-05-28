@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- Keep search engines from indexing the texts -->
+  <meta name="robots" content="noindex, nofollow">
+  <title>Class Texts — Reading Room</title>
+  <style>
+    :root {
+      --ink: #1f2933;
+      --muted: #5a6672;
+      --accent: #7a2e2e;
+      --bg: #f7f4ee;
+      --card: #ffffff;
+      --line: #e3ddd2;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Georgia, 'Times New Roman', serif;
+      background: var(--bg);
+      color: var(--ink);
+      line-height: 1.6;
+    }
+    .wrap { max-width: 760px; margin: 0 auto; padding: 3rem 1.5rem 5rem; }
+    header { border-bottom: 2px solid var(--accent); padding-bottom: 1.25rem; margin-bottom: 2rem; }
+    h1 { font-size: 2rem; margin: 0 0 .25rem; letter-spacing: .5px; }
+    .subtitle { color: var(--muted); font-size: 1rem; font-style: italic; margin: 0; }
+    .note {
+      background: #fdf6e3;
+      border: 1px solid var(--line);
+      border-left: 4px solid var(--accent);
+      padding: .9rem 1.1rem;
+      border-radius: 6px;
+      font-size: .95rem;
+      color: var(--muted);
+      margin-bottom: 2rem;
+    }
+    ul.texts { list-style: none; padding: 0; margin: 0; }
+    ul.texts li { margin: 0 0 1rem; }
+    a.text-card {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 1.1rem 1.3rem;
+      text-decoration: none;
+      color: var(--ink);
+      transition: border-color .15s, transform .15s, box-shadow .15s;
+    }
+    a.text-card:hover {
+      border-color: var(--accent);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 14px rgba(0,0,0,.06);
+    }
+    .pdf-tag {
+      font-family: -apple-system, system-ui, sans-serif;
+      font-size: .7rem;
+      font-weight: 700;
+      letter-spacing: .5px;
+      color: #fff;
+      background: var(--accent);
+      padding: .3rem .5rem;
+      border-radius: 5px;
+      flex-shrink: 0;
+    }
+    .text-title { font-size: 1.15rem; font-weight: 700; }
+    .text-sub { display:block; font-size: .85rem; color: var(--muted); font-style: italic; margin-top: .15rem; }
+    .empty {
+      text-align: center;
+      color: var(--muted);
+      font-style: italic;
+      padding: 2.5rem 1rem;
+      border: 2px dashed var(--line);
+      border-radius: 10px;
+    }
+    footer { margin-top: 3rem; text-align: center; color: var(--muted); font-size: .8rem; font-family: -apple-system, system-ui, sans-serif; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Reading Room</h1>
+      <p class="subtitle">Texts available during this quiz</p>
+    </header>
+
+    <p class="note">
+      Open a text below to read it during your quiz. These are the only documents you should access.
+    </p>
+
+    <ul class="texts">
+
+      <!-- ============================================================
+           HOW TO ADD A TEXT:
+           1. Drop the PDF file into this same folder.
+           2. Copy one <li> block below, paste it inside <ul class="texts">,
+              and change the href to the PDF's filename and the title text.
+           3. Keep filenames simple: no spaces, e.g. great-gatsby.pdf
+           ============================================================ -->
+
+      <!--
+      <li>
+        <a class="text-card" href="great-gatsby.pdf" target="_blank" rel="noopener">
+          <span class="pdf-tag">PDF</span>
+          <span>
+            <span class="text-title">The Great Gatsby</span>
+            <span class="text-sub">F. Scott Fitzgerald — full text</span>
+          </span>
+        </a>
+      </li>
+      -->
+
+      <li class="empty" id="placeholder">
+        No texts added yet. Drop a PDF into this folder and add a link (see the
+        instructions inside this file).
+      </li>
+
+    </ul>
+
+    <footer>Mountain View High School · English</footer>
+  </div>
+</body>
+</html>
