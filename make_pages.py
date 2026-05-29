@@ -79,7 +79,7 @@ for i, p in enumerate(pdfs):
         f"var s=document.getElementById('d{i}').textContent.trim();"
         f"var b=atob(s);var a=new Uint8Array(b.length);"
         f"for(var k=0;k<b.length;k++)a[k]=b.charCodeAt(k);"
-        f"f.src=URL.createObjectURL(new Blob([a],{{type:'application/pdf'}}));"
+        f"f.src=window.URL.createObjectURL(new window.Blob([a],{{type:'application/pdf'}}));"
         f"f.dataset.loaded='1';}}"
         f"document.getElementById('v{i}').style.display='flex';"
     )
