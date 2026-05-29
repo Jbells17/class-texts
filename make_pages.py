@@ -19,7 +19,8 @@ def clean_title(fn):
     t = re.sub(r"\.docx", "", t, flags=re.I)
     t = re.sub(r"\s*-\s*AmLit Curriculum Hub", "", t, flags=re.I)
     t = re.sub(r"\([^)]*\)", "", t)          # drop "(Book Text)" etc.
-    return re.sub(r"\s+", " ", t).strip()
+    t = t.split(",")[0]                       # drop ", (Unit 2), _F _L" trailing cruft
+    return re.sub(r"\s+", " ", t).strip(" -_")
 
 
 def slugify(t):
