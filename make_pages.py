@@ -1,70 +1,148 @@
 #!/usr/bin/env python3
-"""Build ONE self-contained reading-room page for a course.
+"""Build ONE self-contained reading-room page for a course, with in-page search.
 
 Usage: make_pages.py "<Page Title>" <texts_dir> <output_html>
 
-Design notes (why it's built this way):
-- LockDown Browser blocks page-to-page navigation, even within an allowed
-  domain. So there are NO links and NO separate pages per text — every text for
-  a course lives on that course's single page.
-- Each text is shown in place via buttons. On click, the PDF's base64 is decoded
-  into a Blob and the iframe points at a blob: URL (data: URIs are capped at
-  ~2MB in Chromium, which blanks out large texts).
-- In inline onclick handlers, bare `URL` resolves to `document.URL` (a string),
-  so we MUST use `window.URL` / `window.Blob`.
-- build.sh then encrypts the output page with the class password.
+Design notes:
+- LockDown Browser blocks page-to-page navigation AND the browser's built-in
+  Cmd/Ctrl+F. So: one page, no links, and a custom search box per text.
+- Each PDF is embedded as base64 (decoded to a Blob on open — avoids the ~2MB
+  data-URL cap). Per-page plain text is extracted at build time (pdftotext) and
+  embedded as JSON so the search box can find terms and jump to the page via the
+  PDF viewer's #page=N fragment.
+- StatiCrypt injects the decrypted HTML with document.write(), so the <script>
+  below runs normally after the password is entered.
+- In inline handlers bare `URL` means `document.URL`; the script uses window.URL.
 """
-import base64, glob, html, os, sys
+import base64, glob, html, json, os, re, subprocess, sys
 
 title_text = sys.argv[1]
 texts_dir = sys.argv[2]
 out_path = sys.argv[3]
 TITLE = html.escape(title_text)
 
-HEAD = """<!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="robots" content="noindex,nofollow">
-<title>{title}</title>
-<style>
- :root{{--ink:#1f2933;--muted:#5a6672;--accent:#7a2e2e;--bg:#f7f4ee;--card:#fff;--line:#e3ddd2}}
- *{{box-sizing:border-box}}
- body{{margin:0;font-family:Georgia,'Times New Roman',serif;background:var(--bg);color:var(--ink);line-height:1.6}}
- .wrap{{max-width:760px;margin:0 auto;padding:3rem 1.5rem 5rem}}
- header{{border-bottom:2px solid var(--accent);padding-bottom:1.25rem;margin-bottom:2rem}}
- h1{{font-size:2rem;margin:0 0 .25rem;letter-spacing:.5px}}
- .subtitle{{color:var(--muted);font-style:italic;margin:0}}
- .note{{background:#fdf6e3;border:1px solid var(--line);border-left:4px solid var(--accent);padding:.9rem 1.1rem;border-radius:6px;font-size:.95rem;color:var(--muted);margin-bottom:2rem}}
- .card{{display:flex;align-items:center;gap:1rem;width:100%;text-align:left;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:1.1rem 1.3rem;margin:0 0 1rem;cursor:pointer;font-family:inherit;color:var(--ink)}}
- .card:hover{{border-color:var(--accent);box-shadow:0 4px 14px rgba(0,0,0,.06)}}
- .tag{{font-size:.7rem;font-weight:700;letter-spacing:.5px;color:#fff;background:var(--accent);padding:.3rem .5rem;border-radius:5px;font-family:-apple-system,system-ui,sans-serif}}
- .title{{font-size:1.15rem;font-weight:700}}
- .empty{{text-align:center;color:var(--muted);font-style:italic;padding:2.5rem 1rem;border:2px dashed var(--line);border-radius:10px}}
- footer{{margin-top:3rem;text-align:center;color:var(--muted);font-size:.8rem;font-family:-apple-system,system-ui,sans-serif}}
- .viewer{{position:fixed;inset:0;background:#525659;display:none;flex-direction:column;z-index:50}}
- .vbar{{flex:0 0 auto;background:var(--accent);color:#fff;padding:.55rem 1rem;display:flex;align-items:center;gap:1rem}}
- .vbar button{{background:transparent;color:#fff;border:1px solid rgba(255,255,255,.55);padding:.3rem .7rem;border-radius:6px;font-size:.9rem;cursor:pointer;font-family:-apple-system,system-ui,sans-serif}}
- .vbar b{{font-size:1rem}}
- .viewer iframe{{flex:1 1 auto;border:0;width:100%;background:#525659}}
-</style></head>
-<body><div class="wrap">
-<header><h1>{title}</h1><p class="subtitle">Texts available during this quiz</p></header>
-<p class="note">Click a text below to read it.</p>
-""".format(title=TITLE)
-
-FOOT = """<footer>Mountain View High School · English</footer>
-</div></body></html>
-"""
-
 
 def clean_title(fn):
-    import re
     t = re.sub(r"\.pdf$", "", fn, flags=re.I)
     t = re.sub(r"\.docx", "", t, flags=re.I)
-    t = re.sub(r"\([^)]*\)", "", t)        # drop "(Full Text)", "(Unit 2)", etc.
-    t = re.split(r"\s*[-,]", t)[0]          # title is the part before the first "-" or ","
+    t = re.sub(r"\([^)]*\)", "", t)
+    t = re.split(r"\s*[-,]", t)[0]
     return re.sub(r"\s+", " ", t).strip(" -_")
 
+
+def extract_pages(pdf):
+    """Return a list of per-page plain text (whitespace-collapsed)."""
+    try:
+        r = subprocess.run(["pdftotext", "-q", pdf, "-"],
+                           capture_output=True, timeout=180)
+        txt = r.stdout.decode("utf-8", "ignore")
+    except Exception:
+        return []
+    return [re.sub(r"\s+", " ", pg).strip() for pg in txt.split("\f")]
+
+
+def json_for_script(obj):
+    # Safe to embed inside <script>: keep "</" from closing the tag.
+    return json.dumps(obj, ensure_ascii=False).replace("<", "\\u003c")
+
+
+CSS = """
+ :root{--ink:#1f2933;--muted:#5a6672;--accent:#7a2e2e;--bg:#f7f4ee;--card:#fff;--line:#e3ddd2}
+ *{box-sizing:border-box}
+ body{margin:0;font-family:Georgia,'Times New Roman',serif;background:var(--bg);color:var(--ink);line-height:1.6}
+ .wrap{max-width:760px;margin:0 auto;padding:3rem 1.5rem 5rem}
+ header{border-bottom:2px solid var(--accent);padding-bottom:1.25rem;margin-bottom:2rem}
+ h1{font-size:2rem;margin:0 0 .25rem;letter-spacing:.5px}
+ .subtitle{color:var(--muted);font-style:italic;margin:0}
+ .note{background:#fdf6e3;border:1px solid var(--line);border-left:4px solid var(--accent);padding:.9rem 1.1rem;border-radius:6px;font-size:.95rem;color:var(--muted);margin-bottom:2rem}
+ .card{display:flex;align-items:center;gap:1rem;width:100%;text-align:left;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:1.1rem 1.3rem;margin:0 0 1rem;cursor:pointer;font-family:inherit;color:var(--ink)}
+ .card:hover{border-color:var(--accent);box-shadow:0 4px 14px rgba(0,0,0,.06)}
+ .tag{font-size:.7rem;font-weight:700;letter-spacing:.5px;color:#fff;background:var(--accent);padding:.3rem .5rem;border-radius:5px;font-family:-apple-system,system-ui,sans-serif}
+ .title{font-size:1.15rem;font-weight:700}
+ .empty{text-align:center;color:var(--muted);font-style:italic;padding:2.5rem 1rem;border:2px dashed var(--line);border-radius:10px}
+ footer{margin-top:3rem;text-align:center;color:var(--muted);font-size:.8rem;font-family:-apple-system,system-ui,sans-serif}
+ .viewer{position:fixed;inset:0;background:#525659;display:none;flex-direction:column;z-index:50}
+ .vbar{flex:0 0 auto;background:var(--accent);color:#fff;padding:.5rem 1rem;display:flex;align-items:center;gap:.9rem;font-family:-apple-system,system-ui,sans-serif}
+ .vbar button{background:transparent;color:#fff;border:1px solid rgba(255,255,255,.55);padding:.3rem .7rem;border-radius:6px;font-size:.9rem;cursor:pointer;white-space:nowrap}
+ .vbar b{font-size:1rem;font-family:Georgia,serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:30vw}
+ .search{flex:1 1 auto;max-width:420px;margin-left:auto;border:0;border-radius:6px;padding:.45rem .7rem;font-size:.95rem;font-family:inherit}
+ .results{display:none;position:absolute;top:46px;right:0;width:min(440px,92vw);max-height:72vh;overflow:auto;background:#fff;color:var(--ink);border-left:1px solid var(--line);border-bottom:1px solid var(--line);box-shadow:-4px 6px 20px rgba(0,0,0,.25);z-index:60;font-family:-apple-system,system-ui,sans-serif}
+ .results .res{display:block;width:100%;text-align:left;background:#fff;border:0;border-bottom:1px solid var(--line);padding:.6rem .8rem;cursor:pointer;font-size:.88rem;line-height:1.45;color:var(--ink)}
+ .results .res:hover{background:#f3eee5}
+ .results .pg{display:inline-block;font-weight:700;color:var(--accent);margin-right:.4rem}
+ .results mark{background:#ffe08a;padding:0 1px}
+ .results .nores,.results .hint{padding:.8rem;color:var(--muted);font-style:italic;font-size:.85rem}
+ .viewer iframe{flex:1 1 auto;border:0;width:100%;background:#525659}
+"""
+
+APP = r"""
+<script>
+(function(){
+  var BLOBS={};
+  function blobURL(i){
+    if(BLOBS[i]) return BLOBS[i];
+    var s=document.getElementById('d'+i).textContent.trim();
+    var b=atob(s); var a=new Uint8Array(b.length);
+    for(var k=0;k<b.length;k++)a[k]=b.charCodeAt(k);
+    BLOBS[i]=window.URL.createObjectURL(new window.Blob([a],{type:'application/pdf'}));
+    return BLOBS[i];
+  }
+  function pages(i){
+    var el=document.getElementById('tx'+i); if(!el) return [];
+    try{return JSON.parse(el.textContent);}catch(e){return [];}
+  }
+  function esc(s){return s.replace(/[&<>"]/g,function(c){return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c];});}
+  window.openText=function(i){
+    document.getElementById('picker').style.display='none';
+    var f=document.getElementById('f'+i);
+    if(!f.dataset.loaded){ f.src=blobURL(i); f.dataset.loaded='1'; }
+    document.getElementById('v'+i).style.display='flex';
+    var q=document.getElementById('q'+i); if(q){ q.value=''; render(i,''); }
+  };
+  window.closeText=function(i){
+    document.getElementById('v'+i).style.display='none';
+    document.getElementById('picker').style.display='block';
+  };
+  window.gotoPage=function(i,p){
+    var f=document.getElementById('f'+i);
+    f.src=blobURL(i)+'#page='+p; f.dataset.loaded='1';
+  };
+  function render(i,query){
+    var panel=document.getElementById('res'+i);
+    var q=(query||'').trim().toLowerCase();
+    if(q.length<2){ panel.style.display='none'; panel.innerHTML=''; return; }
+    var ps=pages(i);
+    if(!ps.length){ panel.innerHTML='<div class="hint">Search isn\'t available for this text.</div>'; panel.style.display='block'; return; }
+    var out=[], count=0, CAP=80;
+    for(var pg=0; pg<ps.length && count<CAP; pg++){
+      var text=ps[pg], low=text.toLowerCase(), pos=low.indexOf(q);
+      while(pos!==-1 && count<CAP){
+        var a=Math.max(0,pos-45), b=Math.min(text.length,pos+q.length+45);
+        var snip=(a>0?'…':'')+esc(text.slice(a,pos))+'<mark>'+esc(text.slice(pos,pos+q.length))+'</mark>'+esc(text.slice(pos+q.length,b))+(b<text.length?'…':'');
+        out.push('<button class="res" onclick="gotoPage('+i+','+(pg+1)+')"><span class="pg">p.'+(pg+1)+'</span>'+snip+'</button>');
+        count++; pos=low.indexOf(q,pos+q.length);
+      }
+    }
+    if(!out.length){ panel.innerHTML='<div class="nores">No matches for &ldquo;'+esc(query)+'&rdquo;</div>'; }
+    else { panel.innerHTML=(count>=CAP?'<div class="hint">Showing first '+CAP+' matches — keep typing to narrow.</div>':'')+out.join(''); }
+    panel.style.display='block';
+  }
+  window.searchText=function(i){ render(i, document.getElementById('q'+i).value); };
+})();
+</script>
+"""
+
+HEAD = (
+    '<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8">\n'
+    '<meta name="viewport" content="width=device-width,initial-scale=1">\n'
+    '<meta name="robots" content="noindex,nofollow">\n'
+    "<title>%TITLE%</title>\n<style>" + CSS + "</style></head>\n"
+    '<body><div class="wrap">\n'
+    "<header><h1>%TITLE%</h1><p class=\"subtitle\">Texts available during this quiz</p></header>\n"
+    '<p class="note">Click a text below to read it. Inside a text, use the search box to jump to a page.</p>\n'
+).replace("%TITLE%", TITLE)
+
+FOOT = "<footer>Mountain View High School · English</footer>\n</div>" + APP + "\n</body></html>\n"
 
 pdfs = sorted(glob.glob(os.path.join(texts_dir, "*.pdf")))
 buttons, viewers, datablocks = [], [], []
@@ -72,33 +150,25 @@ for i, p in enumerate(pdfs):
     t = html.escape(clean_title(os.path.basename(p)))
     with open(p, "rb") as f:
         b64 = base64.b64encode(f.read()).decode("ascii")
-    onclick_open = (
-        f"document.getElementById('picker').style.display='none';"
-        f"var f=document.getElementById('f{i}');"
-        f"if(!f.dataset.loaded){{"
-        f"var s=document.getElementById('d{i}').textContent.trim();"
-        f"var b=atob(s);var a=new Uint8Array(b.length);"
-        f"for(var k=0;k<b.length;k++)a[k]=b.charCodeAt(k);"
-        f"f.src=window.URL.createObjectURL(new window.Blob([a],{{type:'application/pdf'}}));"
-        f"f.dataset.loaded='1';}}"
-        f"document.getElementById('v{i}').style.display='flex';"
-    )
+    pg = extract_pages(p)
+    pages_json = json_for_script(pg)
     buttons.append(
-        f'<button class="card" onclick="{onclick_open}">'
+        f'<button class="card" onclick="openText({i})">'
         f'<span class="tag">OPEN</span><span class="title">{t}</span></button>'
-    )
-    onclick_back = (
-        f"document.getElementById('v{i}').style.display='none';"
-        f"document.getElementById('picker').style.display='block';"
     )
     viewers.append(
         f'<div class="viewer" id="v{i}">'
-        f'<div class="vbar"><button onclick="{onclick_back}">&larr; All texts</button>'
-        f'<b>{t}</b></div>'
+        f'<div class="vbar"><button onclick="closeText({i})">&larr; All texts</button>'
+        f'<b>{t}</b>'
+        f'<input id="q{i}" class="search" type="search" placeholder="Search this text…" '
+        f'oninput="searchText({i})" autocomplete="off"></div>'
+        f'<div class="results" id="res{i}"></div>'
         f'<iframe id="f{i}" title="{t}"></iframe></div>'
     )
     datablocks.append(f'<script type="text/plain" id="d{i}">{b64}</script>')
-    print(f"    {clean_title(os.path.basename(p))}  ({len(b64)//1024} KB)")
+    datablocks.append(f'<script type="application/json" id="tx{i}">{pages_json}</script>')
+    nonblank = sum(1 for x in pg if x)
+    print(f"    {clean_title(os.path.basename(p))}  ({len(b64)//1024} KB, {nonblank} pages indexed)")
 
 if pdfs:
     picker = '<div id="picker">\n' + "\n".join(buttons) + "\n</div>\n"
