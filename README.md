@@ -13,9 +13,11 @@ at a public URL, only encrypted blobs do.
 |---|---|---|
 | `texts/` | Drop your raw PDFs here | ❌ never (gitignored) |
 | `.password` | The class password | ❌ never (gitignored) |
-| `make_pages.py`, `build.sh` | Build the encrypted pages | ✓ (no secrets) |
-| `index.html` | Public list of titles | ✓ |
-| `<text>.html` | Encrypted, password-gated text | ✓ |
+| `make_pages.py`, `build.sh` | Build the encrypted page | ✓ (no secrets) |
+| `index.html` | The single encrypted, password-gated page (all texts in one) | ✓ |
+
+> Design note: it's ONE page with no links — LockDown Browser blocks page-to-page
+> navigation, so clicking a title reveals the PDF in place instead of opening a new page.
 
 ## To add, swap, or remove a text
 
