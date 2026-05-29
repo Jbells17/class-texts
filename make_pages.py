@@ -65,16 +65,22 @@ pdfs = sorted(glob.glob(os.path.join(TEXTS, "*.pdf")))
 if not pdfs:
     print("No PDFs found in texts/ — nothing to build.")
 
-buttons, viewers = [], []
+buttons, viewers, datablocks = [], [], []
 for i, p in enumerate(pdfs):
     title = html.escape(clean_title(os.path.basename(p)))
     with open(p, "rb") as f:
         b64 = base64.b64encode(f.read()).decode("ascii")
-    datauri = "data:application/pdf;base64," + b64
-    # Button: hide the picker, lazy-load this PDF, show its viewer.
+    # Button: hide picker; on first open, decode this PDF's base64 into a Blob and
+    # point the iframe at a blob: URL (no data-URL size cap); show the viewer.
     onclick_open = (
         f"document.getElementById('picker').style.display='none';"
-        f"var f=document.getElementById('f{i}');if(!f.src)f.src=f.getAttribute('data-src');"
+        f"var f=document.getElementById('f{i}');"
+        f"if(!f.dataset.loaded){{"
+        f"var s=document.getElementById('d{i}').textContent.trim();"
+        f"var b=atob(s);var a=new Uint8Array(b.length);"
+        f"for(var k=0;k<b.length;k++)a[k]=b.charCodeAt(k);"
+        f"f.src=URL.createObjectURL(new Blob([a],{{type:'application/pdf'}}));"
+        f"f.dataset.loaded='1';}}"
         f"document.getElementById('v{i}').style.display='flex';"
     )
     buttons.append(
@@ -89,8 +95,10 @@ for i, p in enumerate(pdfs):
         f'<div class="viewer" id="v{i}">'
         f'<div class="vbar"><button onclick="{onclick_back}">&larr; All texts</button>'
         f'<b>{title}</b></div>'
-        f'<iframe id="f{i}" title="{title}" data-src="{datauri}"></iframe></div>'
+        f'<iframe id="f{i}" title="{title}"></iframe></div>'
     )
+    # Base64 stored in a non-executing script block (browsers never run text/plain).
+    datablocks.append(f'<script type="text/plain" id="d{i}">{b64}</script>')
     print(f"  embedded {clean_title(os.path.basename(p))}  ({len(b64)//1024} KB base64)")
 
 page = (
@@ -99,6 +107,8 @@ page = (
     + "\n".join(buttons)
     + "\n</div>\n"
     + "\n".join(viewers)
+    + "\n"
+    + "\n".join(datablocks)
     + "\n"
     + FOOT
 )
