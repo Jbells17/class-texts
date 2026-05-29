@@ -1,39 +1,42 @@
-# class-texts — Quiz Reading Room
+# class-texts — Password-protected Quiz Reading Room
 
-A simple public web page that holds PDFs students can read **during a Lockdown Browser quiz**.
+PDFs students can read **during a Lockdown Browser quiz**, protected by a shared
+class password. Texts are AES-encrypted (via StatiCrypt) — the raw PDFs never sit
+at a public URL, only encrypted blobs do.
 
-Live URL (after setup): `https://YOUR-USERNAME.github.io/class-texts/`
+- Live URL: **https://jbells17.github.io/class-texts/**
+- Class password: stored in **`.password`** (this file is NOT published)
 
----
+## How it's organized
 
-## One-time setup (do this once)
+| Path | Purpose | Published? |
+|---|---|---|
+| `texts/` | Drop your raw PDFs here | ❌ never (gitignored) |
+| `.password` | The class password | ❌ never (gitignored) |
+| `make_pages.py`, `build.sh` | Build the encrypted pages | ✓ (no secrets) |
+| `index.html` | Public list of titles | ✓ |
+| `<text>.html` | Encrypted, password-gated text | ✓ |
 
-1. Go to **https://github.com/new**
-2. Repository name: **`class-texts`**  ·  set to **Public**  ·  click **Create repository**
-3. On the new repo page, click **"uploading an existing file"**
-4. Drag in **everything from this folder** (`index.html`, your PDFs) and click **Commit changes**
-5. Go to **Settings → Pages**
-6. Under *Source*, choose **Deploy from a branch** → Branch: **main** → Folder: **/ (root)** → **Save**
-7. Wait ~1 minute, then refresh. Your URL appears at the top of the Pages settings.
+## To add, swap, or remove a text
 
-## Adding or swapping texts later
+1. Put the PDF in `texts/` (or delete one you don't want).
+2. Run the build:  `./build.sh`
+3. Push:  `git add -A && git commit -m "update texts" && git push`
 
-1. Put the PDF in this folder (simple filename, no spaces: `great-gatsby.pdf`)
-2. Open `index.html`, copy the example `<li>` block, change the filename + title
-3. Upload the changed files to the repo the same way (drag-and-drop → Commit)
+(Or just ask Claude to do steps 2–3 once the PDF is in `texts/`.)
 
-## ⚠️ CRITICAL — make the link work inside Lockdown Browser
+## To change the password
 
-By default Lockdown Browser blocks all outside websites. To let students reach this page:
+Edit `.password`, then re-run `./build.sh` and push.
 
-- In the **Respondus LockDown Browser dashboard** for your quiz
-- → **Advanced Settings** → **"Allow access to specific external web domains"**
-- → add: **`YOUR-USERNAME.github.io`**
+## ⚠️ CRITICAL — make it work inside Lockdown Browser
 
-Then paste your reading-room URL into the quiz instructions. Only that domain will be
-reachable — everything else stays locked.
+Lockdown Browser blocks outside sites by default. In the **Respondus LockDown
+Browser dashboard** for your quiz → **Advanced Settings** → **"Allow access to
+specific external web domains"** → add **`jbells17.github.io`**. Then paste the
+reading-room URL into your quiz instructions.
 
-## Copyright note
+## ⚠️ TEST IT FIRST
 
-This page is public to the whole internet. Safe for **public-domain** texts
-(e.g. *The Great Gatsby*). Be cautious posting full copyrighted works.
+Always run one **practice quiz in Lockdown Browser** before the real thing, to
+confirm the password prompt and the embedded PDF both display correctly there.
