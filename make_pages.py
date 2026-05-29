@@ -73,17 +73,20 @@ CSS = """
  .results .pg{display:inline-block;font-weight:700;color:var(--accent);margin-right:.4rem}
  .results mark{background:#ffe08a;padding:0 1px}
  .results .nores,.results .hint{padding:.8rem;color:var(--muted);font-style:italic;font-size:.85rem}
+ .results .reshdr{padding:.5rem .8rem;font-size:.8rem;font-weight:700;color:var(--muted);border-bottom:1px solid var(--line);background:#faf7f1;position:sticky;top:0}
+ .results .res.active{background:#fbf0d8}
  .defpop{display:none;position:absolute;top:46px;right:0;width:min(380px,92vw);max-height:62vh;overflow:auto;background:#fff;color:var(--ink);border-left:1px solid var(--line);border-bottom:1px solid var(--line);box-shadow:-4px 6px 20px rgba(0,0,0,.25);z-index:62;padding:.85rem 1rem;font-family:-apple-system,system-ui,sans-serif}
  .defpop .dword{font-weight:700;font-size:1.05rem;color:var(--accent);margin-bottom:.25rem}
  .defpop .ddef{font-size:.92rem;line-height:1.5}
  .defpop .nores,.defpop .hint{color:var(--muted);font-style:italic;font-size:.85rem}
+ .defpop .findbtn{margin-top:.7rem;display:inline-block;background:var(--accent);color:#fff;border:0;border-radius:6px;padding:.4rem .7rem;font-size:.85rem;cursor:pointer;font-family:-apple-system,system-ui,sans-serif}
  .viewer iframe{flex:1 1 auto;border:0;width:100%;background:#525659}
 """
 
 APP = r"""
 <script>
 (function(){
-  var BLOBS={};
+  var BLOBS={}, STATE={};
   function blobURL(i){
     if(BLOBS[i]) return BLOBS[i];
     var s=document.getElementById('d'+i).textContent.trim();
@@ -105,6 +108,7 @@ APP = r"""
     var q=document.getElementById('q'+i); if(q){ q.value=''; render(i,''); }
     var w=document.getElementById('w'+i); if(w){ w.value=''; }
     var dp=document.getElementById('def'+i); if(dp){ dp.style.display='none'; dp.innerHTML=''; }
+    STATE[i]={matches:[],cur:-1,curPage:1,lastWord:''};
     loadDict();  // warm the dictionary in the background so the first lookup is instant
   };
   window.closeText=function(i){
@@ -122,6 +126,8 @@ APP = r"""
   function render(i,query){
     var panel=document.getElementById('res'+i);
     var dp=document.getElementById('def'+i); if(dp){ dp.style.display='none'; }   // one panel at a time
+    var prevPage=(STATE[i]&&STATE[i].curPage)||1, lastW=(STATE[i]&&STATE[i].lastWord)||'';
+    STATE[i]={matches:[],cur:-1,curPage:prevPage,lastWord:lastW};
     var q=(query||'').trim().toLowerCase();
     if(q.length<2){ panel.style.display='none'; panel.innerHTML=''; return; }
     var ps=pages(i);
@@ -132,15 +138,39 @@ APP = r"""
       while(pos!==-1 && count<CAP){
         var a=Math.max(0,pos-45), b=Math.min(text.length,pos+q.length+45);
         var snip=(a>0?'…':'')+esc(text.slice(a,pos))+'<mark>'+esc(text.slice(pos,pos+q.length))+'</mark>'+esc(text.slice(pos+q.length,b))+(b<text.length?'…':'');
-        out.push('<button class="res" onclick="gotoPage('+i+','+(pg+1)+')"><span class="pg">p.'+(pg+1)+'</span>'+snip+'</button>');
+        var mi=STATE[i].matches.length; STATE[i].matches.push(pg+1);
+        out.push('<button class="res" id="r'+i+'_'+mi+'" onclick="gotoMatch('+i+','+mi+')"><span class="pg">p.'+(pg+1)+'</span>'+snip+'</button>');
         count++; pos=low.indexOf(q,pos+q.length);
       }
     }
-    if(!out.length){ panel.innerHTML='<div class="nores">No matches for &ldquo;'+esc(query)+'&rdquo;</div>'; }
-    else { panel.innerHTML=(count>=CAP?'<div class="hint">Showing first '+CAP+' matches — keep typing to narrow.</div>':'')+out.join(''); }
+    var n=STATE[i].matches.length;
+    if(!n){ panel.innerHTML='<div class="nores">No matches for &ldquo;'+esc(query)+'&rdquo;.</div>'; panel.style.display='block'; return; }
+    var hdr='<div class="reshdr" id="hdr'+i+'">'+n+(count>=CAP?'+':'')+' match'+(n===1?'':'es')+' — press Enter to step through</div>';
+    panel.innerHTML=hdr+out.join('');
     panel.style.display='block';
   }
+  function setActive(i,mi){
+    var prev=document.querySelector('#res'+i+' .res.active'); if(prev) prev.classList.remove('active');
+    var el=document.getElementById('r'+i+'_'+mi); if(el){ el.classList.add('active'); el.scrollIntoView({block:'nearest'}); }
+    var hdr=document.getElementById('hdr'+i); if(hdr) hdr.textContent='Match '+(mi+1)+' of '+STATE[i].matches.length;
+  }
+  window.gotoMatch=function(i,mi){
+    var st=STATE[i]; if(!st||!st.matches.length) return;
+    st.cur=mi; var p=st.matches[mi];
+    setActive(i,mi);
+    if(p!==st.curPage){ gotoPage(i,p); st.curPage=p; }   // skip reload if already on that page
+  };
+  window.searchStep=function(i){
+    var st=STATE[i]; if(!st||!st.matches.length) return;
+    gotoMatch(i,(st.cur+1)%st.matches.length);           // next match, wrapping around
+  };
   window.searchText=function(i){ render(i, document.getElementById('q'+i).value); };
+  window.findInText=function(i,word){
+    var q=document.getElementById('q'+i); if(!q) return;
+    q.value=word; render(i,word);
+    if(STATE[i].matches.length){ gotoMatch(i,0); }
+  };
+  window.findLast=function(i){ var w=STATE[i]&&STATE[i].lastWord; if(w) findInText(i,w); };
 
   // ---- Dictionary lookup (loaded once, on demand; same-origin file) ----
   var DICT=null, DICTP=null;
@@ -179,10 +209,13 @@ APP = r"""
     pop.innerHTML='<div class="hint">Looking up…</div>';
     loadDict().then(function(d){
       if(clean(document.getElementById('w'+i).value)!==w) return;  // a newer keystroke won
+      if(!STATE[i]) STATE[i]={matches:[],cur:-1,curPage:1,lastWord:''};
+      STATE[i].lastWord=w;
       var def=findDef(d,w);
-      pop.innerHTML = def
-        ? ('<div class="dword">'+esc(w)+'</div><div class="ddef">'+esc(def)+'</div>')
-        : ('<div class="nores">No definition found for &ldquo;'+esc(raw)+'&rdquo;.</div>');
+      var findBtn='<button class="findbtn" onclick="findLast('+i+')">Find &ldquo;'+esc(w)+'&rdquo; in the text →</button>';
+      pop.innerHTML = (def
+        ? '<div class="dword">'+esc(w)+'</div><div class="ddef">'+esc(def)+'</div>'
+        : '<div class="nores">No definition found for &ldquo;'+esc(raw)+'&rdquo;.</div>') + findBtn;
     });
   };
 })();
@@ -218,7 +251,9 @@ for i, p in enumerate(pdfs):
         f'<div class="vbar"><button onclick="closeText({i})">&larr; All texts</button>'
         f'<b>{t}</b>'
         f'<input id="q{i}" class="search" type="search" placeholder="Search this text…" '
-        f'oninput="searchText({i})" autocomplete="off">'
+        f'oninput="searchText({i})" '
+        f'onkeydown="if(event.key===\'Enter\'){{event.preventDefault();searchStep({i});}}" '
+        f'autocomplete="off">'
         f'<input id="w{i}" class="define" type="search" placeholder="Define a word…" '
         f'oninput="defineWord({i})" autocomplete="off"></div>'
         f'<div class="results" id="res{i}"></div>'
