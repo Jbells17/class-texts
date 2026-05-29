@@ -61,9 +61,8 @@ def clean_title(fn):
     import re
     t = re.sub(r"\.pdf$", "", fn, flags=re.I)
     t = re.sub(r"\.docx", "", t, flags=re.I)
-    t = re.sub(r"\s*-\s*AmLit Curriculum Hub", "", t, flags=re.I)
-    t = re.sub(r"\([^)]*\)", "", t)
-    t = t.split(",")[0]
+    t = re.sub(r"\([^)]*\)", "", t)        # drop "(Full Text)", "(Unit 2)", etc.
+    t = re.split(r"\s*[-,]", t)[0]          # title is the part before the first "-" or ","
     return re.sub(r"\s+", " ", t).strip(" -_")
 
 
