@@ -105,6 +105,7 @@ APP = r"""
     var q=document.getElementById('q'+i); if(q){ q.value=''; render(i,''); }
     var w=document.getElementById('w'+i); if(w){ w.value=''; }
     var dp=document.getElementById('def'+i); if(dp){ dp.style.display='none'; dp.innerHTML=''; }
+    loadDict();  // warm the dictionary in the background so the first lookup is instant
   };
   window.closeText=function(i){
     document.getElementById('v'+i).style.display='none';
