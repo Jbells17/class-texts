@@ -65,13 +65,18 @@ CSS = """
  .vbar{flex:0 0 auto;background:var(--accent);color:#fff;padding:.5rem 1rem;display:flex;align-items:center;gap:.9rem;font-family:-apple-system,system-ui,sans-serif}
  .vbar button{background:transparent;color:#fff;border:1px solid rgba(255,255,255,.55);padding:.3rem .7rem;border-radius:6px;font-size:.9rem;cursor:pointer;white-space:nowrap}
  .vbar b{font-size:1rem;font-family:Georgia,serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:30vw}
- .search{flex:1 1 auto;max-width:420px;margin-left:auto;border:0;border-radius:6px;padding:.45rem .7rem;font-size:.95rem;font-family:inherit}
+ .search{flex:1 1 auto;max-width:320px;margin-left:auto;border:0;border-radius:6px;padding:.45rem .7rem;font-size:.95rem;font-family:inherit}
+ .define{flex:0 0 auto;width:190px;border:0;border-radius:6px;padding:.45rem .7rem;font-size:.95rem;font-family:inherit}
  .results{display:none;position:absolute;top:46px;right:0;width:min(440px,92vw);max-height:72vh;overflow:auto;background:#fff;color:var(--ink);border-left:1px solid var(--line);border-bottom:1px solid var(--line);box-shadow:-4px 6px 20px rgba(0,0,0,.25);z-index:60;font-family:-apple-system,system-ui,sans-serif}
  .results .res{display:block;width:100%;text-align:left;background:#fff;border:0;border-bottom:1px solid var(--line);padding:.6rem .8rem;cursor:pointer;font-size:.88rem;line-height:1.45;color:var(--ink)}
  .results .res:hover{background:#f3eee5}
  .results .pg{display:inline-block;font-weight:700;color:var(--accent);margin-right:.4rem}
  .results mark{background:#ffe08a;padding:0 1px}
  .results .nores,.results .hint{padding:.8rem;color:var(--muted);font-style:italic;font-size:.85rem}
+ .defpop{display:none;position:absolute;top:46px;right:0;width:min(380px,92vw);max-height:62vh;overflow:auto;background:#fff;color:var(--ink);border-left:1px solid var(--line);border-bottom:1px solid var(--line);box-shadow:-4px 6px 20px rgba(0,0,0,.25);z-index:62;padding:.85rem 1rem;font-family:-apple-system,system-ui,sans-serif}
+ .defpop .dword{font-weight:700;font-size:1.05rem;color:var(--accent);margin-bottom:.25rem}
+ .defpop .ddef{font-size:.92rem;line-height:1.5}
+ .defpop .nores,.defpop .hint{color:var(--muted);font-style:italic;font-size:.85rem}
  .viewer iframe{flex:1 1 auto;border:0;width:100%;background:#525659}
 """
 
@@ -98,6 +103,8 @@ APP = r"""
     if(!f.dataset.loaded){ f.src=blobURL(i); f.dataset.loaded='1'; }
     document.getElementById('v'+i).style.display='flex';
     var q=document.getElementById('q'+i); if(q){ q.value=''; render(i,''); }
+    var w=document.getElementById('w'+i); if(w){ w.value=''; }
+    var dp=document.getElementById('def'+i); if(dp){ dp.style.display='none'; dp.innerHTML=''; }
   };
   window.closeText=function(i){
     document.getElementById('v'+i).style.display='none';
@@ -113,6 +120,7 @@ APP = r"""
   };
   function render(i,query){
     var panel=document.getElementById('res'+i);
+    var dp=document.getElementById('def'+i); if(dp){ dp.style.display='none'; }   // one panel at a time
     var q=(query||'').trim().toLowerCase();
     if(q.length<2){ panel.style.display='none'; panel.innerHTML=''; return; }
     var ps=pages(i);
@@ -132,6 +140,50 @@ APP = r"""
     panel.style.display='block';
   }
   window.searchText=function(i){ render(i, document.getElementById('q'+i).value); };
+
+  // ---- Dictionary lookup (loaded once, on demand; same-origin file) ----
+  var DICT=null, DICTP=null;
+  function loadDict(){
+    if(DICTP) return DICTP;
+    DICTP=fetch('/class-texts/dictionary.json').then(function(r){return r.json();})
+      .then(function(j){ DICT=j; return j; })
+      .catch(function(){ DICT={}; return {}; });
+    return DICTP;
+  }
+  function findDef(d,w){
+    if(d[w]) return d[w];
+    var t=[];
+    if(w.length>3){
+      if(w.slice(-2)==="'s") t.push(w.slice(0,-2));
+      if(w.slice(-3)==='ies') t.push(w.slice(0,-3)+'y');
+      if(w.slice(-2)==='es') t.push(w.slice(0,-2));
+      if(w.slice(-1)==='s') t.push(w.slice(0,-1));
+      if(w.slice(-3)==='ied') t.push(w.slice(0,-3)+'y');
+      if(w.slice(-2)==='ed'){ t.push(w.slice(0,-1)); t.push(w.slice(0,-2)); }
+      if(w.slice(-3)==='ing'){ t.push(w.slice(0,-3)+'e'); t.push(w.slice(0,-3)); }
+      if(w.slice(-2)==='er'){ t.push(w.slice(0,-2)); t.push(w.slice(0,-1)); }
+      if(w.slice(-3)==='est'){ t.push(w.slice(0,-3)); t.push(w.slice(0,-2)); }
+    }
+    for(var k=0;k<t.length;k++){ if(d[t[k]]) return d[t[k]]; }
+    return null;
+  }
+  function clean(s){ return (s||'').trim().toLowerCase().replace(/[^a-z'-]/g,''); }
+  window.defineWord=function(i){
+    var raw=document.getElementById('w'+i).value.trim();
+    var w=clean(raw);
+    var pop=document.getElementById('def'+i);
+    var sr=document.getElementById('res'+i); if(sr){ sr.style.display='none'; }  // one panel at a time
+    if(w.length<2){ pop.style.display='none'; pop.innerHTML=''; return; }
+    pop.style.display='block';
+    pop.innerHTML='<div class="hint">Looking up…</div>';
+    loadDict().then(function(d){
+      if(clean(document.getElementById('w'+i).value)!==w) return;  // a newer keystroke won
+      var def=findDef(d,w);
+      pop.innerHTML = def
+        ? ('<div class="dword">'+esc(w)+'</div><div class="ddef">'+esc(def)+'</div>')
+        : ('<div class="nores">No definition found for &ldquo;'+esc(raw)+'&rdquo;.</div>');
+    });
+  };
 })();
 </script>
 """
@@ -143,7 +195,7 @@ HEAD = (
     "<title>%TITLE%</title>\n<style>" + CSS + "</style></head>\n"
     '<body><div class="wrap">\n'
     "<header><h1>%TITLE%</h1><p class=\"subtitle\">Texts available during this quiz</p></header>\n"
-    '<p class="note">Click a text below to read it. Inside a text, use the search box to jump to a page.</p>\n'
+    '<p class="note">Click a text below to read it. Inside a text, use the search box to jump to a page, or the define box to look up a word.</p>\n'
 ).replace("%TITLE%", TITLE)
 
 FOOT = "<footer>Mountain View High School · English</footer>\n</div>" + APP + "\n</body></html>\n"
@@ -165,8 +217,11 @@ for i, p in enumerate(pdfs):
         f'<div class="vbar"><button onclick="closeText({i})">&larr; All texts</button>'
         f'<b>{t}</b>'
         f'<input id="q{i}" class="search" type="search" placeholder="Search this text…" '
-        f'oninput="searchText({i})" autocomplete="off"></div>'
+        f'oninput="searchText({i})" autocomplete="off">'
+        f'<input id="w{i}" class="define" type="search" placeholder="Define a word…" '
+        f'oninput="defineWord({i})" autocomplete="off"></div>'
         f'<div class="results" id="res{i}"></div>'
+        f'<div class="defpop" id="def{i}"></div>'
         f'<iframe id="f{i}" title="{t}"></iframe></div>'
     )
     datablocks.append(f'<script type="text/plain" id="d{i}">{b64}</script>')
