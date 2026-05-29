@@ -105,7 +105,11 @@ APP = r"""
   };
   window.gotoPage=function(i,p){
     var f=document.getElementById('f'+i);
-    f.src=blobURL(i)+'#page='+p; f.dataset.loaded='1';
+    var u=blobURL(i)+'#page='+p;
+    // A fragment-only change won't move an already-loaded PDF viewer, so force a
+    // fresh load at the target page.
+    f.src='about:blank';
+    setTimeout(function(){ f.src=u; f.dataset.loaded='1'; }, 40);
   };
   function render(i,query){
     var panel=document.getElementById('res'+i);
