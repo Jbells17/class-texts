@@ -26,7 +26,7 @@ def clean_title(fn):
     t = re.sub(r"\.pdf$", "", fn, flags=re.I)
     t = re.sub(r"\.docx", "", t, flags=re.I)
     t = re.sub(r"\([^)]*\)", "", t)
-    t = re.split(r"\s*[-,]", t)[0]
+    t = re.split(r"\s*-\s", t)[0]  # split only on "- " so hyphenated words survive
     return re.sub(r"\s+", " ", t).strip(" -_")
 
 
