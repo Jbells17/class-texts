@@ -110,7 +110,7 @@ APP = r"""
   window.openText=function(i){
     document.getElementById('picker').style.display='none';
     var f=document.getElementById('f'+i);
-    if(!f.dataset.loaded){ f.src=blobURL(i); f.dataset.loaded='1'; }
+    if(!f.dataset.loaded){ f.src=blobURL(i)+'#toolbar=0'; f.dataset.loaded='1'; }
     document.getElementById('v'+i).style.display='flex';
     var q=document.getElementById('q'+i); if(q){ q.value=''; render(i,''); }
     var w=document.getElementById('w'+i); if(w){ w.value=''; }
@@ -124,7 +124,7 @@ APP = r"""
   };
   window.gotoPage=function(i,p){
     var f=document.getElementById('f'+i);
-    var u=blobURL(i)+'#page='+p;
+    var u=blobURL(i)+'#page='+p+'&toolbar=0';
     // A fragment-only change won't move an already-loaded PDF viewer, so force a
     // fresh load at the target page.
     f.src='about:blank';
