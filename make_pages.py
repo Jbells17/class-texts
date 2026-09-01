@@ -67,6 +67,8 @@ CSS = """
  .vbar b{font-size:1rem;font-family:Georgia,serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:30vw}
  .search{flex:1 1 auto;max-width:320px;margin-left:auto;border:0;border-radius:6px;padding:.45rem .7rem;font-size:.95rem;font-family:inherit}
  .define{flex:0 0 auto;width:190px;border:0;border-radius:6px;padding:.45rem .7rem;font-size:.95rem;font-family:inherit}
+ .vtip{flex:0 0 auto;font-size:.72rem;line-height:1.25;opacity:.9;white-space:nowrap;font-family:-apple-system,system-ui,sans-serif}
+ @media (max-width:1150px){.vtip{display:none}}
  .results{display:none;position:absolute;top:46px;right:0;width:min(440px,92vw);max-height:72vh;overflow:auto;background:#fff;color:var(--ink);border-left:1px solid var(--line);border-bottom:1px solid var(--line);box-shadow:-4px 6px 20px rgba(0,0,0,.25);z-index:60;font-family:-apple-system,system-ui,sans-serif}
  .results .res{display:block;width:100%;text-align:left;background:#fff;border:0;border-bottom:1px solid var(--line);padding:.6rem .8rem;cursor:pointer;font-size:.88rem;line-height:1.45;color:var(--ink)}
  .results .res:hover{background:#f3eee5}
@@ -264,7 +266,8 @@ for i, p in enumerate(pdfs):
         f'onkeydown="if(event.key===\'Enter\'){{event.preventDefault();searchStep({i});}}" '
         f'autocomplete="off">'
         f'<input id="w{i}" class="define" type="search" placeholder="Define a word…" '
-        f'oninput="defineWord({i})" autocomplete="off"></div>'
+        f'oninput="defineWord({i})" autocomplete="off">'
+        f'<span class="vtip">Stuck in full screen?<br>Press <b>Ctrl&nbsp;+&nbsp;Tab</b></span></div>'
         f'<div class="results" id="res{i}"></div>'
         f'<div class="defpop" id="def{i}"></div>'
         f'<iframe id="f{i}" title="{t}" allow="fullscreen \'none\'"></iframe></div>'
