@@ -87,6 +87,13 @@ APP = r"""
 <script>
 (function(){
   var BLOBS={}, STATE={};
+  // In LockDown Browser, fullscreen hides the toolbar/tabs and strands students.
+  // The iframes already deny fullscreen; if anything still enters it, exit at once.
+  document.addEventListener('fullscreenchange',function(){
+    if(document.fullscreenElement){
+      try{ document.exitFullscreen().catch(function(){}); }catch(e){}
+    }
+  });
   function blobURL(i){
     if(BLOBS[i]) return BLOBS[i];
     var s=document.getElementById('d'+i).textContent.trim();
@@ -258,7 +265,7 @@ for i, p in enumerate(pdfs):
         f'oninput="defineWord({i})" autocomplete="off"></div>'
         f'<div class="results" id="res{i}"></div>'
         f'<div class="defpop" id="def{i}"></div>'
-        f'<iframe id="f{i}" title="{t}"></iframe></div>'
+        f'<iframe id="f{i}" title="{t}" allow="fullscreen \'none\'"></iframe></div>'
     )
     datablocks.append(f'<script type="text/plain" id="d{i}">{b64}</script>')
     datablocks.append(f'<script type="application/json" id="tx{i}">{pages_json}</script>')
