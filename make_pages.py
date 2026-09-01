@@ -237,6 +237,8 @@ HEAD = (
     '<body><div class="wrap">\n'
     "<header><h1>%TITLE%</h1><p class=\"subtitle\">Texts available during this quiz</p></header>\n"
     '<p class="note">Click a text below to read it. Inside a text, use the search box to jump to a page, or the define box to look up a word.</p>\n'
+    '<p class="note"><b>Chromebook tip:</b> if this site goes full screen and you can\'t get back to your exam, '
+    'press <b>Ctrl&nbsp;+&nbsp;Tab</b> to switch back.</p>\n'
 ).replace("%TITLE%", TITLE)
 
 FOOT = "<footer>Mountain View High School · English</footer>\n</div>" + APP + "\n</body></html>\n"
