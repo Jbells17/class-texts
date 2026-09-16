@@ -25,9 +25,11 @@ TITLE = html.escape(title_text)
 def clean_title(fn):
     t = re.sub(r"\.pdf$", "", fn, flags=re.I)
     t = re.sub(r"\.docx", "", t, flags=re.I)
-    t = re.sub(r"\([^)]*\)", "", t)
-    t = re.split(r"\s*-\s", t)[0]  # split only on "- " so hyphenated words survive
-    return re.sub(r"\s+", " ", t).strip(" -_")
+    t = re.sub(r"^\s*handout\s*[-:]\s*", "", t, flags=re.I)  # drop leading "Handout- " prefix
+    t = t.replace("_", ":")                                   # underscore stands in for a colon
+    t = re.sub(r"\([^)]*\)", "", t)                          # drop "(Unit 2)" etc.
+    t = re.split(r"\s*(?:,|-\s)", t)[0]  # cut at first comma or "- " (hyphenated words survive)
+    return re.sub(r"\s+", " ", t).strip(" -_:")
 
 
 def extract_pages(pdf):
