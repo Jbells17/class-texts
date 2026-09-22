@@ -135,7 +135,8 @@ const page = `<!DOCTYPE html>
  header{border-bottom:2px solid var(--accent);padding-bottom:1.25rem;margin-bottom:2rem}
  h1{font-size:2rem;margin:0 0 .25rem;letter-spacing:.5px}
  .subtitle{color:var(--muted);font-style:italic;margin:0}
- .note{background:#eef3fb;border:1px solid var(--line);border-left:4px solid var(--accent);padding:.9rem 1.1rem;border-radius:6px;font-size:.95rem;color:var(--muted);margin-bottom:2rem}
+ .note{background:#eef3fb;border:1px solid var(--line);border-left:4px solid var(--accent);padding:.9rem 1.1rem;border-radius:6px;font-size:.95rem;color:var(--muted);margin-bottom:1rem}
+ .tip{background:#fdf6e3;border:1px solid #ead9b0;border-left:4px solid #8b1a1a;padding:.9rem 1.1rem;border-radius:6px;font-size:.95rem;color:var(--ink);margin-bottom:2rem}
  .card{display:flex;align-items:center;gap:1rem;width:100%;text-align:left;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:1.1rem 1.3rem;margin:0 0 1rem;cursor:pointer;font-family:inherit;color:var(--ink)}
  .card:hover{border-color:var(--accent);box-shadow:0 4px 14px rgba(0,0,0,.06)}
  .tag{font-size:.7rem;font-weight:700;letter-spacing:.5px;color:#fff;background:var(--accent);padding:.3rem .5rem;border-radius:5px;white-space:nowrap}
@@ -162,6 +163,7 @@ const page = `<!DOCTYPE html>
 <body><div class="wrap">
 <header><h1>${esc(TITLE)}</h1><p class="subtitle">Exam Room</p></header>
 <p class="note">Click your name, then type your <b>personal password</b> (on the slip you were given) to open your exam. Your password only opens your own exam.</p>
+<p class="tip"><b>Chromebook tip:</b> if this site goes full screen and you can't get back to your exam, press <b>Ctrl + Tab</b> to switch back.</p>
 ${picker}
 ${panels.join("\n")}
 ${datablocks.join("\n")}
