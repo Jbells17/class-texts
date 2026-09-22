@@ -56,6 +56,33 @@ touches `build.sh` or the two course pages).
   assignment instructions. The build warns if a section page gets too large
   (>45 MB); if so, that section is probably better split.
 
+## Exam Rooms (per-student passwords — for revision activities in LockDown)
+
+A fourth use of the pattern, built by **`build-exam.sh`** / **`make_exam.mjs`**
+(fully independent of the other rooms). Difference from the rooms above: on top
+of the shared class password (which just gates the page so student names stay
+off the public web), **each student's exam PDF is individually AES-encrypted
+with that student's own password** — clicking your name asks for it, and a
+classmate's password opens nothing.
+
+- **One page per room.** Each folder under `texts/exam/` becomes its own page:
+  `texts/exam/<room>/` → `https://jbells17.github.io/class-texts/exam/<room>/`
+  Optional `texts/exam/<room>/.title` file sets the page title.
+- **One PDF per student**, named `First.LastName.pdf` (a ` - suffix` after the
+  name is allowed and ignored for grouping).
+- **Personal passwords** are auto-generated (three words, e.g.
+  `maple-otter-cove`) into `texts/exam/<room>/.passwords.csv` — gitignored,
+  never published. Rebuilds reuse existing passwords; delete a student's row to
+  rotate theirs.
+- **Printable slips** for handing out land in `_build/slips-<room>.html`
+  (also never published): print, cut apart, one slip per student.
+- Build & publish:
+
+      ./build-exam.sh
+      git add -A && git commit -m "update exam rooms" && git push
+
+  The LockDown whitelist domain `jbells17.github.io` already covers these pages.
+
 ## Change the password
 
 Edit `.password`, then re-run `./build.sh` (and `./build-research.sh`) and push.
