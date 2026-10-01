@@ -22,7 +22,11 @@ build_course () {  # <title> <texts_dir> <output_dir>
 
 build_course "American Lit Reading Room"      "texts/amlit"      "."
 build_course "Philosophy in Lit Reading Room" "texts/philosophy" "philosophy"
+# Unlinked from the main rooms: for the pre-assessment revision only, so
+# make-up students using the main room never see the model essay.
+build_course "AmLit Revision Room"            "texts/amlit-revision" "amlit-revision"
 
 echo "==> Done."
 echo "   American Lit: https://jbells17.github.io/class-texts/"
 echo "   Philosophy:   https://jbells17.github.io/class-texts/philosophy/"
+echo "   AmLit Revision: https://jbells17.github.io/class-texts/amlit-revision/"
