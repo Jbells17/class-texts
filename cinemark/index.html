@@ -245,7 +245,10 @@
       tags: Array.isArray(l.tags) ? l.tags.map(String) : [],
       notes: String(l.notes || ''),
       effect: String(l.effect || ''),
-      screenshot: typeof l.screenshot === 'string' && l.screenshot.startsWith('data:image/') ? l.screenshot : null
+      screenshot: typeof l.screenshot === 'string' && l.screenshot.startsWith('data:image/') ? l.screenshot : null,
+      // Which video the entry came from, so ▶ in the timeline can replay it (blank on older entries)
+      source: SOURCES.some(s => s.id === l.source) ? l.source : '',
+      videoKey: String(l.videoKey || '')
     });
 
     const loadSaved = () => {
@@ -413,6 +416,8 @@
       const formRef = useRef(null);
       const toastTimer = useRef(null);
       const pinnedRef = useRef(null);
+      const pendingPlayRef = useRef(null); // { mode, seconds } to play once a video finishes loading
+      const playerCardRef = useRef(null);
       const playbackRateRef = useRef(1);
       const modeRef = useRef(sourceMode);
       modeRef.current = sourceMode;
@@ -423,7 +428,7 @@
       const showToast = (msg, opts = {}) => {
         clearTimeout(toastTimer.current);
         setToast({ msg, tone: opts.tone || 'ok', action: opts.action || null, key: makeId() });
-        toastTimer.current = setTimeout(() => setToast(null), opts.action ? 6000 : 3000);
+        toastTimer.current = setTimeout(() => setToast(null), opts.duration || (opts.action ? 6000 : 3000));
       };
 
       // ---------- Autosave ----------
@@ -485,6 +490,12 @@
                 if (cancelled) return;
                 setYtReady(true);
                 e.target.setPlaybackRate(playbackRateRef.current);
+                const pending = pendingPlayRef.current;
+                if (pending && pending.mode === 'youtube') {
+                  pendingPlayRef.current = null;
+                  e.target.seekTo(pending.seconds, true);
+                  e.target.playVideo();
+                }
               },
               onStateChange: (e) => {
                 if (modeRef.current === 'youtube') setIsPlaying(e.data === YT.PlayerState.PLAYING);
@@ -520,6 +531,7 @@
 
       const switchSource = (mode) => {
         if (mode === sourceMode) return;
+        pendingPlayRef.current = null;
         if (videoRef.current) videoRef.current.pause();
         try { ytPlayerRef.current && ytPlayerRef.current.pauseVideo(); } catch (e) { /* not ready */ }
         setIsPlaying(false);
@@ -537,6 +549,7 @@
         e.preventDefault();
         const id = parseYoutubeUrl(youtubeUrl);
         if (id) {
+          pendingPlayRef.current = null;
           setYoutubeId(id);
           setCurrentTime(0);
           setDuration(0);
@@ -642,9 +655,62 @@
         try { ytPlayerRef.current && ytPlayerRef.current.setPlaybackRate(rate); } catch (e) { /* not ready */ }
       };
 
+      const currentVideoKey = () => ({ local: localFileName, youtube: youtubeId, gdrive: gdriveId }[sourceMode] || '');
+
+      // Bring the player back on screen when ▶ is pressed from further down the page
+      const scrollPlayerIntoView = () => {
+        const el = playerCardRef.current;
+        const header = document.querySelector('header');
+        if (!el) return;
+        // The sticky header's height varies with screen width, so measure it rather than guess
+        const gap = el.getBoundingClientRect().top - (header ? header.offsetHeight : 0) - 12;
+        if (gap < 0) window.scrollBy({ top: gap, behavior: 'smooth' });
+      };
+
+      // Timeline ▶: switch to the video the entry was logged from, jump to its time, and play
       const jumpToLog = (log) => {
-        if (!seekTo(log.timestamp)) {
-          showToast(`Scrub the video to ${formatTime(log.timestamp)} — this source can't be controlled from here.`);
+        const mode = log.source || sourceMode;
+        const t = log.timestamp;
+        const chooseFile = { label: 'Choose file', run: () => fileInputRef.current.click() };
+
+        if (mode === 'stopwatch') {
+          showToast('This entry was timed with the stopwatch, so there is no video here to replay.');
+          return;
+        }
+        switchSource(mode);
+        scrollPlayerIntoView();
+
+        if (mode === 'local') {
+          const v = videoRef.current;
+          if (!v || (log.videoKey && localFileName && log.videoKey !== localFileName)) {
+            // Play it as soon as the right file is loaded (see onLoadedMetadata)
+            pendingPlayRef.current = { mode, seconds: t };
+            const name = log.videoKey || localFileName;
+            showToast(name ? `Open ${name} to play this moment.` : 'Open the video file to play this moment.', { action: chooseFile });
+            return;
+          }
+          v.currentTime = t;
+          setCurrentTime(t);
+          v.play().catch(() => {});
+        } else if (mode === 'youtube') {
+          const id = log.videoKey || youtubeId;
+          if (!id) {
+            showToast('Load the YouTube video first, then press ▶ again.');
+          } else if (id !== youtubeId || !ytReady) {
+            // Play it once the player finishes loading (see onReady)
+            pendingPlayRef.current = { mode, seconds: t };
+            if (id !== youtubeId) setYoutubeId(id);
+          } else {
+            ytPlayerRef.current.seekTo(t, true);
+            ytPlayerRef.current.playVideo();
+            setCurrentTime(t);
+          }
+        } else if (mode === 'gdrive') {
+          // Drive's player can't be controlled from another page, so line the clock up and say where to drag
+          const id = log.videoKey || gdriveId;
+          if (id && id !== gdriveId) setGdriveId(id);
+          setSw({ baseMs: t * 1000, startedAt: null });
+          showToast(`Drag Drive's slider to ${formatTime(t)}, then press play and Start clock. The clock is already set to ${formatTime(t)}.`, { duration: 7000 });
         }
       };
 
@@ -715,7 +781,7 @@
           setLogs(prev => prev.map(l => l.id === editingLogId ? { ...l, ...fields } : l));
           showToast(`Updated entry at ${formatTime(stamp.seconds)}`);
         } else {
-          setLogs(prev => [...prev, { id: makeId(), ...fields }]);
+          setLogs(prev => [...prev, { id: makeId(), source: sourceMode, videoKey: currentVideoKey(), ...fields }]);
           showToast(`Logged ${formatTime(stamp.seconds)}`);
         }
         resetForm();
@@ -1009,7 +1075,7 @@
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
 
                   {/* LEFT: PLAYER */}
-                  <div className="md:col-span-7 space-y-4">
+                  <div className="md:col-span-7 space-y-4" ref={playerCardRef}>
                     <div className="bg-cinema-900 rounded-2xl border border-slate-800 overflow-hidden shadow-xl">
 
                       {/* Source selector */}
@@ -1057,8 +1123,15 @@
                               onClick={togglePlay}
                               onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
                               onLoadedMetadata={(e) => {
-                                setDuration(e.currentTarget.duration);
-                                e.currentTarget.playbackRate = playbackRateRef.current;
+                                const v = e.currentTarget;
+                                setDuration(v.duration);
+                                v.playbackRate = playbackRateRef.current;
+                                const pending = pendingPlayRef.current;
+                                if (pending && pending.mode === 'local') {
+                                  pendingPlayRef.current = null;
+                                  v.currentTime = pending.seconds;
+                                  v.play().catch(() => {});
+                                }
                               }}
                               onPlay={() => modeRef.current === 'local' && setIsPlaying(true)}
                               onPause={() => modeRef.current === 'local' && setIsPlaying(false)}
@@ -1499,7 +1572,7 @@
                           <div className="flex items-center justify-between border-b border-slate-800/80 pb-2 gap-2">
                             <button
                               onClick={() => jumpToLog(log)}
-                              title="Jump to this moment"
+                              title="Play from this moment"
                               className="font-mono text-sm font-bold text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 px-2.5 py-1 rounded-lg border border-amber-500/30 flex items-center gap-1.5 transition"
                             >
                               <i className="fa-solid fa-play text-[10px]"></i>
