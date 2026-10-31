@@ -486,6 +486,11 @@
       const toastTimer = useRef(null);
       const pinnedRef = useRef(null);
       const pendingPlayRef = useRef(null); // { mode, seconds } to play once a video finishes loading
+      const displayAreaRef = useRef(null);
+      const captureVideoRef = useRef(null);
+      const imageInputRef = useRef(null);
+      const [frameCapture, setFrameCapture] = useState(null); // { track, cropped } while tab capture is on
+      const canTabCapture = !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia);
       const playerCardRef = useRef(null);
       const playbackRateRef = useRef(1);
       const modeRef = useRef(sourceMode);
@@ -651,20 +656,112 @@
         showToast(`Loaded ${file.name}`);
       };
 
-      // Frame capture, downscaled so screenshots fit in browser storage
+      // Copy a region of a video/image into a small JPEG so screenshots fit in browser storage
+      const snapshot = (source, sx, sy, sw, sh) => {
+        const scale = Math.min(1, 480 / sw);
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(sw * scale);
+        canvas.height = Math.round(sh * scale);
+        canvas.getContext('2d').drawImage(source, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+        return canvas.toDataURL('image/jpeg', 0.65);
+      };
+
       const captureFrame = () => {
-        const v = videoRef.current;
-        if (sourceMode !== 'local' || !v || !v.videoWidth) return null;
         try {
-          const scale = Math.min(1, 480 / v.videoWidth);
-          const canvas = document.createElement('canvas');
-          canvas.width = Math.round(v.videoWidth * scale);
-          canvas.height = Math.round(v.videoHeight * scale);
-          canvas.getContext('2d').drawImage(v, 0, 0, canvas.width, canvas.height);
-          return canvas.toDataURL('image/jpeg', 0.65);
+          if (sourceMode === 'local') {
+            const v = videoRef.current;
+            return v && v.videoWidth ? snapshot(v, 0, 0, v.videoWidth, v.videoHeight) : null;
+          }
+          // YouTube/Drive: read from the tab capture, if it's on
+          const cv = captureVideoRef.current;
+          const area = displayAreaRef.current;
+          if (!frameCapture || sourceMode === 'stopwatch' || !cv || !cv.videoWidth || !area) return null;
+          const r = area.getBoundingClientRect();
+          if (r.bottom <= 0 || r.top >= window.innerHeight) return null; // player scrolled off screen
+          if (frameCapture.cropped) return snapshot(cv, 0, 0, cv.videoWidth, cv.videoHeight);
+          // No Region Capture (non-Chrome browsers): the frame is the whole tab, so cut the player out by position
+          const k = cv.videoWidth / window.innerWidth;
+          return snapshot(cv, r.left * k, r.top * k, r.width * k, r.height * k);
         } catch (e) {
           return null;
         }
+      };
+
+      // YouTube and Drive play inside Google's own frames, which the browser won't let this page read.
+      // With the student's permission, capturing this tab (cropped to the player) gets the frames anyway.
+      // Nothing is recorded or uploaded; the stream only lives in this page.
+      const startFrameCapture = () => {
+        navigator.mediaDevices.getDisplayMedia({
+          video: { displaySurface: 'browser', frameRate: 5 },
+          audio: false,
+          preferCurrentTab: true,
+          selfBrowserSurface: 'include',
+          surfaceSwitching: 'exclude'
+        }).then(async (stream) => {
+          const [track] = stream.getVideoTracks();
+          let cropped = false;
+          if (window.CropTarget && track.cropTo && displayAreaRef.current) {
+            try {
+              await track.cropTo(await CropTarget.fromElement(displayAreaRef.current));
+              cropped = true;
+            } catch (e) {
+              // Chrome only allows cropping a capture of this same tab, so another tab or window was picked
+              track.stop();
+              showToast('Choose "this tab" when Chrome asks what to share, then try again.', { tone: 'warn', duration: 6000 });
+              return;
+            }
+          }
+          const v = captureVideoRef.current;
+          v.srcObject = stream;
+          await v.play().catch(() => {});
+          // Fires if the student presses "Stop sharing" in Chrome's bar
+          track.addEventListener('ended', () => {
+            v.srcObject = null;
+            setFrameCapture(null);
+          });
+          setFrameCapture({ track, cropped });
+          showToast('Frame capture is on. New entries will include a still of the video.');
+        }).catch(() => showToast('Frame capture was cancelled or blocked on this computer.', { tone: 'warn' }));
+      };
+
+      const stopFrameCapture = () => {
+        if (frameCapture) frameCapture.track.stop();
+        if (captureVideoRef.current) captureVideoRef.current.srcObject = null;
+        setFrameCapture(null);
+      };
+
+      // Pasted or uploaded screenshots: works in any browser, for any source
+      const attachImage = (file) => {
+        if (!file || !file.type.startsWith('image/')) return;
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = () => {
+          const shot = snapshot(img, 0, 0, img.naturalWidth, img.naturalHeight);
+          URL.revokeObjectURL(url);
+          const base = pinnedRef.current || { seconds: Math.floor(getActiveSeconds()) };
+          setPinned({ ...base, screenshot: shot });
+          showToast('Image added to this entry');
+        };
+        img.onerror = () => {
+          URL.revokeObjectURL(url);
+          showToast("Couldn't read that image.", { tone: 'warn' });
+        };
+        img.src = url;
+      };
+
+      const handleImagePick = (e) => {
+        const file = e.target.files[0];
+        e.target.value = '';
+        attachImage(file);
+      };
+
+      // Only takes over a paste that is purely an image, so pasting text into the notes still works
+      const handlePaste = (e) => {
+        const items = [...((e.clipboardData && e.clipboardData.items) || [])];
+        const imageItem = items.find(i => i.kind === 'file' && i.type.startsWith('image/'));
+        if (!imageItem || items.some(i => i.type === 'text/plain')) return;
+        e.preventDefault();
+        attachImage(imageItem.getAsFile());
       };
 
       // ---------- Playback controls ----------
@@ -878,7 +975,7 @@
       // The listener is registered once and always calls the latest handlers through this ref,
       // so it never acts on stale state (the old version could resurrect deleted entries).
       const keyHandlers = useRef({});
-      keyHandlers.current = { togglePlay, seekBy, quickMark, handleSaveLog, activeTab, showShortcutsModal, setShowShortcutsModal };
+      keyHandlers.current = { togglePlay, seekBy, quickMark, handleSaveLog, handlePaste, activeTab, showShortcutsModal, setShowShortcutsModal };
 
       useEffect(() => {
         const onKeyDown = (e) => {
@@ -914,8 +1011,19 @@
             h.seekBy(1);
           }
         };
+        // Paste a screenshot anywhere in the Analysis Room (except the film/name boxes) to attach it
+        const onPaste = (e) => {
+          const h = keyHandlers.current;
+          const el = document.activeElement;
+          const inOtherField = el && ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName) && !el.closest('[data-log-form]');
+          if (h.activeTab === 'logger' && !inOtherField) h.handlePaste(e);
+        };
         window.addEventListener('keydown', onKeyDown);
-        return () => window.removeEventListener('keydown', onKeyDown);
+        window.addEventListener('paste', onPaste);
+        return () => {
+          window.removeEventListener('keydown', onKeyDown);
+          window.removeEventListener('paste', onPaste);
+        };
       }, []);
 
       // ---------- Derived data ----------
@@ -1223,9 +1331,11 @@
                       </div>
 
                       <input ref={fileInputRef} type="file" accept="video/*" onChange={handleFileUpload} className="hidden" />
+                      {/* Receives the tab capture for YouTube/Drive stills; kept rendering but invisible */}
+                      <video ref={captureVideoRef} muted playsInline aria-hidden="true" style={{ position: 'fixed', width: 1, height: 1, opacity: 0, pointerEvents: 'none', left: 0, top: 0 }} />
 
                       {/* DISPLAY AREA — all sources stay mounted so switching tabs doesn't lose your place */}
-                      <div className="relative aspect-video bg-black overflow-hidden">
+                      <div ref={displayAreaRef} className="relative aspect-video bg-black overflow-hidden">
 
                         {/* LOCAL VIDEO */}
                         <div className={panelClass('local')}>
@@ -1443,6 +1553,34 @@
                         </div>
                       )}
 
+                      {/* FRAME CAPTURE — YouTube/Drive stills need permission to capture this tab */}
+                      {((sourceMode === 'youtube' && youtubeId) || (sourceMode === 'gdrive' && gdriveId)) && (
+                        <div className="px-3 py-2 bg-cinema-950 border-t border-slate-800 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                          {frameCapture ? (
+                            <>
+                              <span className="text-emerald-400"><i className="fa-solid fa-camera mr-1.5"></i>Frame capture is on. New entries include a still of the video.</span>
+                              <button onClick={stopFrameCapture} className="text-slate-400 hover:text-rose-400">Turn off</button>
+                            </>
+                          ) : canTabCapture ? (
+                            <>
+                              <span className="text-slate-400">
+                                <i className="fa-solid fa-camera mr-1.5"></i>
+                                {sourceMode === 'youtube' ? 'YouTube' : 'Google Drive'} won't hand frames to other sites. Turn on capture to save stills.
+                              </span>
+                              <button
+                                onClick={startFrameCapture}
+                                title={'Chrome will ask to share this tab: pick "this tab". Nothing is recorded or sent anywhere.'}
+                                className="px-2.5 py-1 rounded-lg bg-cinema-800 hover:bg-cinema-700 text-amber-400 font-semibold whitespace-nowrap"
+                              >
+                                Turn on frame capture
+                              </button>
+                            </>
+                          ) : (
+                            <span className="text-slate-400"><i className="fa-solid fa-camera mr-1.5"></i>To save a still, take a screenshot and paste it into the entry.</span>
+                          )}
+                        </div>
+                      )}
+
                       {/* MARK BAR */}
                       <div className="bg-cinema-950/90 border-t border-slate-800 p-3 flex items-center justify-between gap-3">
                         <div className="flex items-center gap-3">
@@ -1480,10 +1618,20 @@
                       {/* Timestamp */}
                       <div className="flex items-center gap-3">
                         {pinned && pinned.screenshot && (
-                          <img src={pinned.screenshot} alt="" className="w-20 h-12 object-cover rounded border border-slate-700" />
+                          <div className="relative shrink-0">
+                            <img src={pinned.screenshot} alt="Still for this entry" className="w-20 h-12 object-cover rounded border border-slate-700" />
+                            <button
+                              onClick={() => setPinned({ ...pinned, screenshot: null })}
+                              aria-label="Remove the still"
+                              title="Remove the still"
+                              className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-slate-900 border border-slate-600 text-slate-300 hover:text-rose-400 flex items-center justify-center text-[9px]"
+                            >
+                              <i className="fa-solid fa-xmark"></i>
+                            </button>
+                          </div>
                         )}
-                        <div className="flex-1 space-y-1">
-                          <div className="flex items-center gap-2">
+                        <div className="flex-1 min-w-0 space-y-1">
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                             <label htmlFor="stamp" className="text-xs text-slate-300 font-medium">Timestamp</label>
                             <input
                               id="stamp"
@@ -1509,6 +1657,13 @@
                               ? <span><i className="fa-solid fa-thumbtack mr-1 text-amber-400"></i>Locked in. Click the time to type a different one.</span>
                               : 'Locks in as soon as you pick a technique or start writing.'}
                           </p>
+                          <p className="text-[10px] text-slate-500">
+                            <button onClick={() => imageInputRef.current.click()} className="text-slate-400 hover:text-amber-400">
+                              <i className="fa-solid fa-image mr-1"></i>{pinned && pinned.screenshot ? 'Replace image' : 'Add image'}
+                            </button>
+                            {' '}or paste a screenshot ({MOD_KEY}+V)
+                          </p>
+                          <input ref={imageInputRef} type="file" accept="image/*" onChange={handleImagePick} className="hidden" />
                         </div>
                       </div>
 
