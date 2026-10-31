@@ -1,0 +1,1778 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CineMark – Film Analysis & Timestamp Logger</title>
+  <!-- CDN versions are pinned so an upstream release can't silently break the page -->
+  <script src="https://cdn.tailwindcss.com/3.4.16"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone@7.25.6/babel.min.js"></script>
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            cinema: {
+              950: '#0a0d14',
+              900: '#111726',
+              800: '#1a2235',
+              700: '#28344d',
+              600: '#3a4a6b',
+              gold: '#f59e0b',
+              amber: '#d97706'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body {
+      background-color: #0a0d14;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    }
+    /* Custom scrollbar for taxonomy and logs */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #111726; }
+    ::-webkit-scrollbar-thumb { background: #28344d; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #3a4a6b; }
+
+    /* The YouTube API swaps our placeholder div for an iframe; make it fill the frame */
+    .yt-host iframe { width: 100%; height: 100%; border: 0; }
+
+    /* Print / Save as PDF: hide the app, show the clean report */
+    .print-only { display: none; }
+    @media print {
+      @page { margin: 0.6in; }
+      body { background: #fff !important; color: #111 !important; }
+      .no-print { display: none !important; }
+      .print-only { display: block !important; }
+    }
+    #print-report { font-family: Georgia, 'Times New Roman', serif; color: #111; font-size: 11pt; }
+    #print-report h1 { font-size: 18pt; margin: 0 0 4pt; }
+    #print-report .meta { color: #444; margin-bottom: 14pt; }
+    #print-report table { width: 100%; border-collapse: collapse; }
+    #print-report th, #print-report td { border: 1px solid #999; padding: 6pt; vertical-align: top; text-align: left; }
+    #print-report th { background: #eee; }
+    #print-report tr { break-inside: avoid; }
+    #print-report img { width: 1.8in; display: block; margin-bottom: 4pt; }
+    #print-report .time { font-family: ui-monospace, Menlo, monospace; white-space: nowrap; font-weight: bold; }
+    #print-report .label { font-size: 8pt; text-transform: uppercase; letter-spacing: 0.05em; color: #666; }
+  </style>
+</head>
+<body class="text-slate-100 min-h-screen flex flex-col antialiased selection:bg-amber-500 selection:text-slate-950">
+
+  <div id="root"></div>
+
+  <!-- data-presets="react": only compile JSX; modern browsers run everything else natively -->
+  <script type="text/babel" data-presets="react">
+    const { useState, useEffect, useRef, useMemo } = React;
+
+    const STORAGE_KEY = 'cinemark.v3';
+    const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
+    const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform);
+    const MOD_KEY = IS_MAC ? '⌘' : 'Ctrl';
+
+    // DEFAULT FILM TECHNIQUE TAXONOMY
+    const DEFAULT_TAXONOMY = {
+      'Cinematography': [
+        'Extreme Long Shot (ELS)', 'Long Shot (LS)', 'Medium Shot (MS)', 'Close-up (CU)', 'Extreme Close-up (ECU)',
+        'Establishing Shot', 'Two-shot', 'Over-the-shoulder', 'High Angle', 'Low Angle', 'Eye-level', 'Dutch Angle',
+        "Bird's-eye View", 'Pan / Tilt', 'Tracking / Dolly Shot', 'Crane / Aerial Shot', 'Handheld', 'Zoom',
+        'Dolly Zoom', 'Long Take', 'Shallow Depth of Field', 'Deep Focus', 'Rack Focus'
+      ],
+      'Editing': [
+        'Continuity Editing', 'Shot / Reverse Shot', 'Eyeline Match', 'Cross-cutting', 'Match Cut', 'Graphic Match',
+        'Jump Cut', 'Smash Cut', 'Montage', 'Dissolve', 'Fade In / Fade Out', 'Wipe', 'L-Cut / J-Cut', 'Pacing / Rhythm'
+      ],
+      'Sound': [
+        'Diegetic Sound', 'Non-diegetic Sound', 'Score', 'Leitmotif', 'Voiceover', 'Sound Bridge',
+        'Sound Effects / Foley', 'Ambient Sound', 'Silence', 'Off-screen Sound', 'Contrapuntal Sound'
+      ],
+      'Mise-en-Scène': [
+        'Setting / Location', 'High-key Lighting', 'Low-key Lighting', 'Chiaroscuro', 'Backlighting / Silhouette',
+        'Color Palette', 'Costume / Makeup', 'Props', 'Blocking / Staging', 'Framing / Composition', 'Acting / Performance'
+      ],
+      'Narrative & Theory': [
+        'POV Shot', 'Foreshadowing', 'Flashback / Flash-forward', 'Non-linear Narrative', 'Motif', 'Symbol',
+        'Allegory', 'Irony', 'Character Arc', 'Subtext', 'Ideological Lens'
+      ]
+    };
+
+    // One-line definitions, shown as hover tooltips and in the glossary tab
+    const DEFINITIONS = {
+      'Extreme Long Shot (ELS)': 'A vast view where the setting dominates and people look tiny.',
+      'Long Shot (LS)': 'Shows a full body in its surroundings.',
+      'Medium Shot (MS)': 'Frames a character from about the waist up.',
+      'Close-up (CU)': 'A face or object fills the frame, emphasizing emotion or importance.',
+      'Extreme Close-up (ECU)': 'A single detail — eyes, a hand, an object — fills the frame.',
+      'Establishing Shot': 'A wide opening shot that tells us where (and sometimes when) we are.',
+      'Two-shot': 'Two characters share the frame, highlighting their relationship.',
+      'Over-the-shoulder': 'Filmed from behind one character, looking at another.',
+      'High Angle': 'The camera looks down, making the subject seem small or vulnerable.',
+      'Low Angle': 'The camera looks up, making the subject seem powerful or threatening.',
+      'Eye-level': 'A neutral angle that puts the viewer on equal footing with the subject.',
+      'Dutch Angle': 'A tilted frame that suggests unease, tension, or disorder.',
+      "Bird's-eye View": 'Shot from directly overhead; detached or godlike.',
+      'Pan / Tilt': 'The camera pivots side to side (pan) or up and down (tilt) from a fixed spot.',
+      'Tracking / Dolly Shot': 'The camera physically moves alongside or toward the action.',
+      'Crane / Aerial Shot': 'The camera rises above or sweeps over the scene.',
+      'Handheld': 'Shaky, unstabilized camera that feels immediate, raw, or chaotic.',
+      'Zoom': 'The lens magnifies the image without the camera moving.',
+      'Dolly Zoom': 'Camera moves while zooming the opposite way; the background warps — a feeling of vertigo.',
+      'Long Take': 'An unusually long shot with no cuts.',
+      'Shallow Depth of Field': 'Only one plane is in focus, isolating the subject.',
+      'Deep Focus': 'Foreground and background are both sharp.',
+      'Rack Focus': 'Focus shifts from one plane to another mid-shot, redirecting attention.',
+      'Continuity Editing': '"Invisible" cutting that keeps space and time easy to follow.',
+      'Shot / Reverse Shot': 'Cuts back and forth between characters in a conversation.',
+      'Eyeline Match': 'A cut that shows what a character is looking at.',
+      'Cross-cutting': 'Alternates between events happening at the same time in different places.',
+      'Match Cut': 'Links two shots through a matching action or movement.',
+      'Graphic Match': 'Links two shots through similar shapes, colors, or composition.',
+      'Jump Cut': 'An abrupt cut that skips forward in time within the same shot.',
+      'Smash Cut': 'A sudden cut to a sharply contrasting scene or sound.',
+      'Montage': 'A series of short shots that compresses time or builds an idea.',
+      'Dissolve': 'One shot gradually blends into the next.',
+      'Fade In / Fade Out': 'The image emerges from, or disappears into, black.',
+      'Wipe': 'A new shot pushes the old one off the screen.',
+      'L-Cut / J-Cut': "Sound from one shot carries over (or starts before) the cut to the next.",
+      'Pacing / Rhythm': 'How shot length speeds up or slows down the scene.',
+      'Diegetic Sound': 'Sound the characters can hear: dialogue, in-world music, noises.',
+      'Non-diegetic Sound': 'Sound only the audience hears: score, narration, added effects.',
+      'Score': 'Original music composed for the film.',
+      'Leitmotif': 'A recurring musical theme tied to a character, place, or idea.',
+      'Voiceover': 'Narration heard over the images.',
+      'Sound Bridge': 'Sound that carries across a cut, linking two scenes.',
+      'Sound Effects / Foley': 'Added everyday sounds — footsteps, doors, punches.',
+      'Ambient Sound': 'The background sound of a place.',
+      'Silence': 'The deliberate absence of sound, used for emphasis.',
+      'Off-screen Sound': 'Sound whose source is outside the frame.',
+      'Contrapuntal Sound': 'Sound or music that clashes with the mood of the image.',
+      'Setting / Location': 'Where the scene takes place, and what that place suggests.',
+      'High-key Lighting': 'Bright, even lighting with few shadows; open or cheerful.',
+      'Low-key Lighting': 'Dark lighting with deep shadows; mystery or menace.',
+      'Chiaroscuro': 'Strong contrast between light and dark.',
+      'Backlighting / Silhouette': 'Light from behind the subject, sometimes leaving only an outline.',
+      'Color Palette': 'The dominant colors of a scene and what they evoke.',
+      'Costume / Makeup': 'What characters wear and how they look — and what that reveals.',
+      'Props': 'Objects that carry dramatic or symbolic weight.',
+      'Blocking / Staging': 'Where actors stand and move in relation to each other and the camera.',
+      'Framing / Composition': 'How people and objects are arranged within the frame.',
+      'Acting / Performance': 'Facial expression, gesture, movement, and voice.',
+      'POV Shot': 'We see through a character\'s eyes.',
+      'Foreshadowing': 'A hint of something that will happen later.',
+      'Flashback / Flash-forward': 'The story jumps back or ahead in time.',
+      'Non-linear Narrative': 'The story is told out of chronological order.',
+      'Motif': 'A recurring image, sound, or idea.',
+      'Symbol': 'Something concrete that stands for an abstract idea.',
+      'Allegory': 'The whole story maps onto a larger idea, event, or situation.',
+      'Irony': 'A gap between what is expected and what happens (or what is said and meant).',
+      'Character Arc': 'How a character changes over the course of the film.',
+      'Subtext': 'Meaning beneath what is directly said or shown.',
+      'Ideological Lens': 'Reading the scene through a critical lens: class, gender, race, power…'
+    };
+
+    const SOURCES = [
+      { id: 'local', label: 'Local Video', icon: 'fa-solid fa-file-video' },
+      { id: 'youtube', label: 'YouTube', icon: 'fa-brands fa-youtube text-red-400' },
+      { id: 'gdrive', label: 'Google Drive', icon: 'fa-brands fa-google-drive text-blue-400' },
+      { id: 'stopwatch', label: 'Stopwatch', icon: 'fa-solid fa-stopwatch' }
+    ];
+
+    // ---------- Helpers ----------
+
+    // Seconds -> "MM:SS", or "H:MM:SS" once a film passes the hour mark
+    const formatTime = (secs) => {
+      if (!Number.isFinite(secs) || secs < 0) secs = 0;
+      secs = Math.floor(secs);
+      const h = Math.floor(secs / 3600);
+      const m = Math.floor((secs % 3600) / 60);
+      const s = secs % 60;
+      const pad = (n) => String(n).padStart(2, '0');
+      return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
+    };
+
+    // "84", "1:24", "1:02:03" -> seconds; null when it isn't a time
+    const parseTime = (str) => {
+      const parts = String(str).trim().split(':');
+      if (parts.length > 3 || parts.some(p => !/^\d+$/.test(p))) return null;
+      return parts.reduce((total, p) => total * 60 + Number(p), 0);
+    };
+
+    // Accepts watch, youtu.be, shorts, embed, live, and bare 11-character IDs
+    const parseYoutubeUrl = (input) => {
+      const s = input.trim();
+      if (/^[\w-]{11}$/.test(s)) return s;
+      const match = s.match(/(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/|live\/|v\/))([\w-]{11})/);
+      return match ? match[1] : null;
+    };
+
+    const parseGDriveUrl = (input) => {
+      const s = input.trim();
+      const match = s.match(/\/file\/d\/([\w-]+)/) || s.match(/[?&]id=([\w-]+)/);
+      if (match) return match[1];
+      return /^[\w-]{25,}$/.test(s) ? s : null;
+    };
+
+    const makeId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+
+    const csvCell = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const mdCell = (v) => String(v ?? '').replace(/\|/g, '\\|').replace(/\s*\n\s*/g, ' ');
+    const htmlEsc = (v) => String(v ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const htmlText = (v) => htmlEsc(v).replace(/\n/g, '<br>');
+    const safeFilename = (s) => s.trim().replace(/[^\w\- ]+/g, '').replace(/\s+/g, '_');
+
+    const downloadFile = (filename, content, type) => {
+      const url = URL.createObjectURL(new Blob([content], { type }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    };
+
+    // Coerce anything loaded from storage or a project file into a well-formed entry
+    const normalizeLog = (l) => ({
+      id: String(l.id || makeId()),
+      timestamp: Math.max(0, Math.floor(Number(l.timestamp) || 0)),
+      tags: Array.isArray(l.tags) ? l.tags.map(String) : [],
+      notes: String(l.notes || ''),
+      effect: String(l.effect || ''),
+      screenshot: typeof l.screenshot === 'string' && l.screenshot.startsWith('data:image/') ? l.screenshot : null
+    });
+
+    const loadSaved = () => {
+      try {
+        const data = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
+        return { ...data, logs: Array.isArray(data.logs) ? data.logs.map(normalizeLog) : [] };
+      } catch (e) {
+        return { logs: [] };
+      }
+    };
+
+    // Load the YouTube IFrame API once; it lets us read the playhead and seek
+    let ytApiPromise = null;
+    const loadYouTubeApi = () => {
+      if (window.YT && window.YT.Player) return Promise.resolve(window.YT);
+      if (!ytApiPromise) {
+        ytApiPromise = new Promise((resolve, reject) => {
+          const previous = window.onYouTubeIframeAPIReady;
+          window.onYouTubeIframeAPIReady = () => { previous && previous(); resolve(window.YT); };
+          const tag = document.createElement('script');
+          tag.src = 'https://www.youtube.com/iframe_api';
+          tag.onerror = () => { ytApiPromise = null; reject(new Error('YouTube API failed to load')); };
+          document.head.appendChild(tag);
+        });
+      }
+      return ytApiPromise;
+    };
+
+    const ytErrorMessage = (code) => ({
+      2: "That doesn't look like a valid YouTube video.",
+      5: "YouTube couldn't play this video in the browser.",
+      100: 'This video was removed or is private.',
+      101: "The video's owner doesn't allow it to be played on other sites.",
+      150: "The video's owner doesn't allow it to be played on other sites.",
+      api: "Couldn't reach YouTube. Check the internet connection or the school web filter."
+    }[code] || 'YouTube refused to play this video here.');
+
+    // ---------- Small components ----------
+
+    function AddInput({ placeholder, onAdd, buttonLabel = 'Add' }) {
+      const [value, setValue] = useState('');
+      const submit = (e) => {
+        e.preventDefault();
+        if (onAdd(value.trim())) setValue('');
+      };
+      return (
+        <form onSubmit={submit} className="flex gap-1.5">
+          <input
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            placeholder={placeholder}
+            aria-label={placeholder}
+            className="flex-1 min-w-0 bg-cinema-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-500"
+          />
+          <button type="submit" className="px-3 py-1.5 bg-cinema-700 hover:bg-cinema-600 text-slate-200 rounded-lg text-xs font-semibold whitespace-nowrap">
+            <i className="fa-solid fa-plus mr-1"></i>{buttonLabel}
+          </button>
+        </form>
+      );
+    }
+
+    function MetaField({ label, value, onChange, placeholder, width }) {
+      return (
+        <label className="flex items-center gap-2">
+          <span className="text-slate-500 font-medium uppercase tracking-wider text-[10px]">{label}</span>
+          <input
+            type="text"
+            value={value}
+            placeholder={placeholder}
+            onChange={(e) => onChange(e.target.value)}
+            className={`bg-cinema-800 border border-slate-700 rounded px-2.5 py-1 text-slate-200 font-semibold placeholder-slate-600 placeholder:font-normal focus:outline-none focus:border-amber-500 ${width}`}
+          />
+        </label>
+      );
+    }
+
+    function NavTab({ active, onClick, icon, children }) {
+      return (
+        <button
+          onClick={onClick}
+          aria-current={active ? 'page' : undefined}
+          className={`px-4 py-2 rounded-lg font-semibold text-xs transition flex items-center gap-2 ${
+            active ? 'bg-amber-500 text-slate-950 shadow' : 'text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <i className={icon}></i>
+          <span>{children}</span>
+        </button>
+      );
+    }
+
+    function ExportButton({ onClick, icon, children, primary }) {
+      return (
+        <button
+          onClick={onClick}
+          className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition ${
+            primary ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow' : 'bg-cinema-800 hover:bg-cinema-700 text-slate-200 border border-slate-700'
+          }`}
+        >
+          <i className={icon}></i>
+          <span>{children}</span>
+        </button>
+      );
+    }
+
+    // ---------- App ----------
+
+    function App() {
+      const [saved] = useState(loadSaved);
+
+      // Film & student metadata
+      const [meta, setMeta] = useState({ filmTitle: '', director: '', studentName: '', classPeriod: '', ...saved.meta });
+      const updateMeta = (key) => (value) => setMeta(m => ({ ...m, [key]: value }));
+
+      // Video source state
+      const [sourceMode, setSourceMode] = useState(saved.sourceMode || 'local');
+      const [localVideoSrc, setLocalVideoSrc] = useState(null);
+      const [localFileName, setLocalFileName] = useState(saved.localFileName || '');
+      const [youtubeUrl, setYoutubeUrl] = useState('');
+      const [youtubeId, setYoutubeId] = useState(saved.youtubeId || '');
+      const [gdriveUrl, setGdriveUrl] = useState('');
+      const [gdriveId, setGdriveId] = useState(saved.gdriveId || '');
+
+      // Playback state (local video + YouTube)
+      const [currentTime, setCurrentTime] = useState(0);
+      const [duration, setDuration] = useState(0);
+      const [isPlaying, setIsPlaying] = useState(false);
+      const [playbackRate, setPlaybackRate] = useState(1);
+      const [ytReady, setYtReady] = useState(false);
+      const [ytError, setYtError] = useState(null);
+
+      // Stopwatch: clock-based so it doesn't drift, used for Stopwatch and Google Drive modes
+      const [sw, setSw] = useState({ baseMs: 0, startedAt: null });
+      const [, setTick] = useState(0);
+
+      // Taxonomy & observation form
+      const [taxonomy, setTaxonomy] = useState(saved.taxonomy || DEFAULT_TAXONOMY);
+      const [selectedCategoryTab, setSelectedCategoryTab] = useState(Object.keys(saved.taxonomy || DEFAULT_TAXONOMY)[0]);
+      const [selectedTags, setSelectedTags] = useState([]);
+      const [noteText, setNoteText] = useState('');
+      const [effectText, setEffectText] = useState('');
+      const [pinned, setPinnedState] = useState(null); // { seconds, screenshot } locked in for the entry being written
+      const [pinnedInput, setPinnedInput] = useState('');
+      const [editingLogId, setEditingLogId] = useState(null);
+
+      // Observation timeline
+      const [logs, setLogs] = useState(saved.logs);
+      const [settings, setSettings] = useState({ autoPause: true, printShots: true, ...saved.settings });
+
+      // UI
+      const [activeTab, setActiveTab] = useState('logger');
+      const [searchFilter, setSearchFilter] = useState('');
+      const [categoryFilter, setCategoryFilter] = useState('All');
+      const [showShortcutsModal, setShowShortcutsModal] = useState(false);
+      const [toast, setToast] = useState(null);
+      const [storageWarning, setStorageWarning] = useState(false);
+
+      // Refs
+      const videoRef = useRef(null);
+      const fileInputRef = useRef(null);
+      const projectInputRef = useRef(null);
+      const ytContainerRef = useRef(null);
+      const ytPlayerRef = useRef(null);
+      const noteRef = useRef(null);
+      const formRef = useRef(null);
+      const toastTimer = useRef(null);
+      const pinnedRef = useRef(null);
+      const playbackRateRef = useRef(1);
+      const modeRef = useRef(sourceMode);
+      modeRef.current = sourceMode;
+
+      const activeCategory = taxonomy[selectedCategoryTab] ? selectedCategoryTab : Object.keys(taxonomy)[0];
+
+      // Notification toast; an optional action renders a button (used for Undo)
+      const showToast = (msg, opts = {}) => {
+        clearTimeout(toastTimer.current);
+        setToast({ msg, tone: opts.tone || 'ok', action: opts.action || null, key: makeId() });
+        toastTimer.current = setTimeout(() => setToast(null), opts.action ? 6000 : 3000);
+      };
+
+      // ---------- Autosave ----------
+      // Debounced so typing in a field doesn't re-serialize every screenshot on each keystroke
+      useEffect(() => {
+        const t = setTimeout(() => {
+          const data = { meta, logs, taxonomy, settings, sourceMode, youtubeId, gdriveId, localFileName };
+          try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+            setStorageWarning(false);
+          } catch (e) {
+            // Browser storage is full (screenshots are the big part): keep the text, drop the images
+            try {
+              localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...data, logs: logs.map(l => ({ ...l, screenshot: null })) }));
+            } catch (e2) { /* storage unavailable entirely */ }
+            setStorageWarning(true);
+          }
+        }, 400);
+        return () => clearTimeout(t);
+      }, [meta, logs, taxonomy, settings, sourceMode, youtubeId, gdriveId, localFileName]);
+
+      // ---------- Stopwatch ----------
+      useEffect(() => {
+        if (sw.startedAt == null) return;
+        const t = setInterval(() => setTick(n => n + 1), 250);
+        return () => clearInterval(t);
+      }, [sw.startedAt]);
+
+      const swRunning = sw.startedAt != null;
+      const swSeconds = Math.floor((sw.baseMs + (swRunning ? Date.now() - sw.startedAt : 0)) / 1000);
+      const swToggle = () => setSw(s => s.startedAt != null
+        ? { baseMs: s.baseMs + Date.now() - s.startedAt, startedAt: null }
+        : { ...s, startedAt: Date.now() });
+      const swNudge = (delta) => setSw(s => {
+        const now = Date.now();
+        const total = s.baseMs + (s.startedAt != null ? now - s.startedAt : 0);
+        return { baseMs: Math.max(0, total + delta * 1000), startedAt: s.startedAt != null ? now : null };
+      });
+      const swReset = () => setSw({ baseMs: 0, startedAt: null });
+
+      // ---------- YouTube player ----------
+      useEffect(() => {
+        if (!youtubeId) return;
+        let cancelled = false;
+        setYtReady(false);
+        setYtError(null);
+        loadYouTubeApi().then(YT => {
+          if (cancelled || !ytContainerRef.current) return;
+          const mount = document.createElement('div');
+          ytContainerRef.current.innerHTML = '';
+          ytContainerRef.current.appendChild(mount);
+          ytPlayerRef.current = new YT.Player(mount, {
+            videoId: youtubeId,
+            width: '100%',
+            height: '100%',
+            playerVars: { rel: 0, playsinline: 1, ...(location.protocol.startsWith('http') ? { origin: location.origin } : {}) },
+            events: {
+              onReady: (e) => {
+                if (cancelled) return;
+                setYtReady(true);
+                e.target.setPlaybackRate(playbackRateRef.current);
+              },
+              onStateChange: (e) => {
+                if (modeRef.current === 'youtube') setIsPlaying(e.data === YT.PlayerState.PLAYING);
+              },
+              onError: (e) => !cancelled && setYtError(e.data)
+            }
+          });
+        }).catch(() => !cancelled && setYtError('api'));
+        return () => {
+          cancelled = true;
+          try { ytPlayerRef.current && ytPlayerRef.current.destroy(); } catch (e) { /* already gone */ }
+          ytPlayerRef.current = null;
+          setYtReady(false);
+          if (ytContainerRef.current) ytContainerRef.current.innerHTML = '';
+        };
+      }, [youtubeId]);
+
+      // The YouTube API has no time-update event, so poll the playhead
+      useEffect(() => {
+        if (sourceMode !== 'youtube' || !ytReady) return;
+        const t = setInterval(() => {
+          const p = ytPlayerRef.current;
+          if (!p || !p.getCurrentTime) return;
+          setCurrentTime(p.getCurrentTime() || 0);
+          setDuration(p.getDuration() || 0);
+        }, 250);
+        return () => clearInterval(t);
+      }, [sourceMode, ytReady]);
+
+      // ---------- Source handling ----------
+      const canControlPlayer = (sourceMode === 'local' && !!localVideoSrc) || (sourceMode === 'youtube' && ytReady);
+      const usesClock = sourceMode === 'stopwatch' || sourceMode === 'gdrive';
+
+      const switchSource = (mode) => {
+        if (mode === sourceMode) return;
+        if (videoRef.current) videoRef.current.pause();
+        try { ytPlayerRef.current && ytPlayerRef.current.pauseVideo(); } catch (e) { /* not ready */ }
+        setIsPlaying(false);
+        if (mode === 'local' && videoRef.current) {
+          setCurrentTime(videoRef.current.currentTime);
+          setDuration(videoRef.current.duration || 0);
+        } else {
+          setCurrentTime(0);
+          setDuration(0);
+        }
+        setSourceMode(mode);
+      };
+
+      const handleYoutubeSubmit = (e) => {
+        e.preventDefault();
+        const id = parseYoutubeUrl(youtubeUrl);
+        if (id) {
+          setYoutubeId(id);
+          setCurrentTime(0);
+          setDuration(0);
+          showToast('YouTube video loaded');
+        } else {
+          showToast("That doesn't look like a YouTube link.", { tone: 'warn' });
+        }
+      };
+
+      const handleGDriveSubmit = (e) => {
+        e.preventDefault();
+        const id = parseGDriveUrl(gdriveUrl);
+        if (id) {
+          setGdriveId(id);
+          swReset();
+          showToast('Google Drive video loaded');
+        } else {
+          showToast("That doesn't look like a Google Drive file link.", { tone: 'warn' });
+        }
+      };
+
+      const handleFileUpload = (e) => {
+        const file = e.target.files[0];
+        e.target.value = '';
+        if (!file) return;
+        if (localVideoSrc) URL.revokeObjectURL(localVideoSrc);
+        setLocalVideoSrc(URL.createObjectURL(file));
+        setLocalFileName(file.name);
+        setCurrentTime(0);
+        showToast(`Loaded ${file.name}`);
+      };
+
+      // Frame capture, downscaled so screenshots fit in browser storage
+      const captureFrame = () => {
+        const v = videoRef.current;
+        if (sourceMode !== 'local' || !v || !v.videoWidth) return null;
+        try {
+          const scale = Math.min(1, 480 / v.videoWidth);
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.round(v.videoWidth * scale);
+          canvas.height = Math.round(v.videoHeight * scale);
+          canvas.getContext('2d').drawImage(v, 0, 0, canvas.width, canvas.height);
+          return canvas.toDataURL('image/jpeg', 0.65);
+        } catch (e) {
+          return null;
+        }
+      };
+
+      // ---------- Playback controls ----------
+      const getActiveSeconds = () => {
+        if (sourceMode === 'local') return videoRef.current ? videoRef.current.currentTime : 0;
+        if (sourceMode === 'youtube') {
+          const p = ytPlayerRef.current;
+          return p && p.getCurrentTime ? p.getCurrentTime() : 0;
+        }
+        return swSeconds;
+      };
+      const displaySeconds = usesClock ? swSeconds : currentTime;
+
+      const togglePlay = () => {
+        if (sourceMode === 'local' && videoRef.current) {
+          const v = videoRef.current;
+          if (v.paused) v.play().catch(() => {}); else v.pause();
+        } else if (sourceMode === 'youtube' && ytReady) {
+          const p = ytPlayerRef.current;
+          if (p.getPlayerState() === YT.PlayerState.PLAYING) p.pauseVideo(); else p.playVideo();
+        } else if (usesClock) {
+          swToggle();
+        }
+      };
+
+      // Only pauses players we control; the clock keeps running because the film keeps playing elsewhere
+      const pausePlayback = () => {
+        if (sourceMode === 'local' && videoRef.current) videoRef.current.pause();
+        else if (sourceMode === 'youtube' && ytReady) ytPlayerRef.current.pauseVideo();
+      };
+
+      const seekTo = (seconds) => {
+        const target = Math.max(0, duration ? Math.min(seconds, duration) : seconds);
+        if (sourceMode === 'local' && videoRef.current) {
+          videoRef.current.currentTime = target;
+          setCurrentTime(target);
+          return true;
+        }
+        if (sourceMode === 'youtube' && ytReady) {
+          ytPlayerRef.current.seekTo(target, true);
+          setCurrentTime(target);
+          return true;
+        }
+        return false;
+      };
+
+      // Arrow keys: ±5s on a real player, ±1s nudge on the clock (to keep it in sync)
+      const seekBy = (direction) => {
+        if (canControlPlayer) seekTo(getActiveSeconds() + direction * 5);
+        else if (usesClock) swNudge(direction);
+      };
+
+      const handleSpeedChange = (rate) => {
+        setPlaybackRate(rate);
+        playbackRateRef.current = rate;
+        if (videoRef.current) videoRef.current.playbackRate = rate;
+        try { ytPlayerRef.current && ytPlayerRef.current.setPlaybackRate(rate); } catch (e) { /* not ready */ }
+      };
+
+      const jumpToLog = (log) => {
+        if (!seekTo(log.timestamp)) {
+          showToast(`Scrub the video to ${formatTime(log.timestamp)} — this source can't be controlled from here.`);
+        }
+      };
+
+      // ---------- Pinning the timestamp ----------
+      // The time locks in when you start an entry (M key, picking a technique, or typing),
+      // not when you finish writing it — otherwise the stamp drifts while you type.
+      const setPinned = (value) => {
+        pinnedRef.current = value;
+        setPinnedState(value);
+        setPinnedInput(value ? formatTime(value.seconds) : '');
+      };
+
+      const pinNow = ({ pause = settings.autoPause } = {}) => {
+        setPinned({ seconds: Math.floor(getActiveSeconds()), screenshot: captureFrame() });
+        if (pause) pausePlayback();
+      };
+
+      const ensurePinned = () => {
+        if (!pinnedRef.current) pinNow();
+      };
+
+      const commitPinnedInput = () => {
+        const secs = parseTime(pinnedInput);
+        if (secs == null) {
+          setPinnedInput(pinned ? formatTime(pinned.seconds) : '');
+          if (pinnedInput.trim()) showToast('Type the time like 1:24 or 1:02:03.', { tone: 'warn' });
+          return;
+        }
+        if (pinned && secs === pinned.seconds) return;
+        // A hand-typed time no longer matches the captured frame, so drop it
+        setPinned({ seconds: secs, screenshot: null });
+      };
+
+      const quickMark = () => {
+        pinNow();
+        setTimeout(() => noteRef.current && noteRef.current.focus(), 0);
+      };
+
+      // ---------- Observation form ----------
+      const toggleTag = (tag) => {
+        ensurePinned();
+        setSelectedTags(tags => tags.includes(tag) ? tags.filter(t => t !== tag) : [...tags, tag]);
+      };
+      const removeSelectedTag = (tag) => setSelectedTags(tags => tags.filter(t => t !== tag));
+
+      const resetForm = () => {
+        setSelectedTags([]);
+        setNoteText('');
+        setEffectText('');
+        setPinned(null);
+        setEditingLogId(null);
+      };
+
+      const handleSaveLog = () => {
+        if (selectedTags.length === 0 && !noteText.trim() && !effectText.trim()) {
+          showToast('Pick at least one technique or write a note first.', { tone: 'warn' });
+          return;
+        }
+        const stamp = pinned || { seconds: Math.floor(getActiveSeconds()), screenshot: captureFrame() };
+        const fields = {
+          timestamp: stamp.seconds,
+          tags: selectedTags,
+          notes: noteText.trim(),
+          effect: effectText.trim(),
+          screenshot: stamp.screenshot
+        };
+        if (editingLogId) {
+          setLogs(prev => prev.map(l => l.id === editingLogId ? { ...l, ...fields } : l));
+          showToast(`Updated entry at ${formatTime(stamp.seconds)}`);
+        } else {
+          setLogs(prev => [...prev, { id: makeId(), ...fields }]);
+          showToast(`Logged ${formatTime(stamp.seconds)}`);
+        }
+        resetForm();
+      };
+
+      const handleEditLog = (log) => {
+        setEditingLogId(log.id);
+        setSelectedTags(log.tags);
+        setNoteText(log.notes);
+        setEffectText(log.effect);
+        setPinned({ seconds: log.timestamp, screenshot: log.screenshot });
+        setActiveTab('logger');
+        setTimeout(() => formRef.current && formRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
+      };
+
+      const handleDeleteLog = (log) => {
+        setLogs(prev => prev.filter(l => l.id !== log.id));
+        if (editingLogId === log.id) resetForm();
+        showToast(`Deleted entry at ${formatTime(log.timestamp)}`, {
+          action: { label: 'Undo', run: () => setLogs(prev => [...prev, log]) }
+        });
+      };
+
+      // ---------- Keyboard shortcuts ----------
+      // The listener is registered once and always calls the latest handlers through this ref,
+      // so it never acts on stale state (the old version could resurrect deleted entries).
+      const keyHandlers = useRef({});
+      keyHandlers.current = { togglePlay, seekBy, quickMark, handleSaveLog, activeTab, showShortcutsModal, setShowShortcutsModal };
+
+      useEffect(() => {
+        const onKeyDown = (e) => {
+          const h = keyHandlers.current;
+          const el = document.activeElement;
+          const typing = el && (['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName) || el.isContentEditable);
+
+          if (e.key === 'Escape') {
+            if (h.showShortcutsModal) h.setShowShortcutsModal(false);
+            else if (typing) el.blur();
+            return;
+          }
+          if (typing) {
+            if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && el.closest('[data-log-form]')) {
+              e.preventDefault();
+              h.handleSaveLog();
+            }
+            return;
+          }
+          if (h.activeTab !== 'logger' || h.showShortcutsModal || e.metaKey || e.ctrlKey || e.altKey) return;
+
+          if (e.code === 'Space') {
+            e.preventDefault();
+            h.togglePlay();
+          } else if (e.code === 'KeyM') {
+            e.preventDefault();
+            h.quickMark();
+          } else if (e.code === 'ArrowLeft') {
+            e.preventDefault();
+            h.seekBy(-1);
+          } else if (e.code === 'ArrowRight') {
+            e.preventDefault();
+            h.seekBy(1);
+          }
+        };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+      }, []);
+
+      // ---------- Derived data ----------
+      const tagCategory = useMemo(() => {
+        const map = {};
+        Object.entries(taxonomy).forEach(([cat, tags]) => tags.forEach(t => { if (!map[t]) map[t] = cat; }));
+        return map;
+      }, [taxonomy]);
+
+      // A log's categories come from its tags, so mixed entries show up under every filter they belong to
+      const categoriesOf = (log) => [...new Set(log.tags.map(t => tagCategory[t] || 'Other'))];
+
+      const sortedLogs = useMemo(() => [...logs].sort((a, b) => a.timestamp - b.timestamp), [logs]);
+      const hasOther = sortedLogs.some(l => l.tags.some(t => !tagCategory[t]));
+
+      const filteredLogs = sortedLogs.filter(log => {
+        const q = searchFilter.trim().toLowerCase();
+        const matchesSearch = !q ||
+          log.notes.toLowerCase().includes(q) ||
+          log.effect.toLowerCase().includes(q) ||
+          log.tags.some(t => t.toLowerCase().includes(q)) ||
+          formatTime(log.timestamp).includes(q);
+        const matchesCategory = categoryFilter === 'All' || categoriesOf(log).includes(categoryFilter);
+        return matchesSearch && matchesCategory;
+      });
+
+      // ---------- Exports ----------
+      const filmLabel = meta.filmTitle.trim() || 'Untitled film';
+      const baseName = [safeFilename(meta.filmTitle) || 'Film', safeFilename(meta.studentName)].filter(Boolean).join('_');
+      const metaLine = [
+        meta.director && `Director: ${meta.director}`,
+        meta.studentName && `Student: ${meta.studentName}`,
+        meta.classPeriod && `Class: ${meta.classPeriod}`
+      ].filter(Boolean).join(' | ');
+
+      const requireLogs = () => {
+        if (logs.length) return true;
+        showToast('Nothing to export yet — log a few moments first.', { tone: 'warn' });
+        return false;
+      };
+
+      const copyForDocs = () => {
+        if (!requireLogs()) return;
+        const rows = sortedLogs.map(l =>
+          `<tr><td><b>${formatTime(l.timestamp)}</b></td><td>${htmlEsc(l.tags.join(', '))}</td><td>${htmlText(l.notes)}</td><td>${htmlText(l.effect)}</td></tr>`
+        ).join('');
+        const html = `<h2>Film Analysis: ${htmlEsc(filmLabel)}</h2>${metaLine ? `<p>${htmlEsc(metaLine)}</p>` : ''}` +
+          `<table border="1" cellpadding="6" style="border-collapse:collapse"><thead><tr><th>Time</th><th>Techniques</th><th>What happens on screen</th><th>Effect / why it matters</th></tr></thead><tbody>${rows}</tbody></table>`;
+        const text = `Film Analysis: ${filmLabel}\n${metaLine}\n\n` + sortedLogs.map(l =>
+          `[${formatTime(l.timestamp)}] ${l.tags.join(', ')}\n${l.notes}${l.effect ? `\nEffect: ${l.effect}` : ''}`
+        ).join('\n\n');
+        const write = window.ClipboardItem
+          ? navigator.clipboard.write([new ClipboardItem({
+              'text/html': new Blob([html], { type: 'text/html' }),
+              'text/plain': new Blob([text], { type: 'text/plain' })
+            })])
+          : navigator.clipboard.writeText(text);
+        write
+          .then(() => showToast('Copied! Paste into a Google Doc.'))
+          .catch(() => showToast("Couldn't reach the clipboard — try Download CSV instead.", { tone: 'warn' }));
+      };
+
+      const exportMarkdown = () => {
+        if (!requireLogs()) return;
+        let md = `# Film Analysis: ${filmLabel}\n`;
+        if (metaLine) md += `**${metaLine}**\n`;
+        md += `\n| Timestamp | Techniques | What happens on screen | Effect / why it matters |\n|---|---|---|---|\n`;
+        sortedLogs.forEach(l => {
+          md += `| ${formatTime(l.timestamp)} | ${mdCell(l.tags.join(', '))} | ${mdCell(l.notes)} | ${mdCell(l.effect)} |\n`;
+        });
+        navigator.clipboard.writeText(md)
+          .then(() => showToast('Markdown copied to clipboard'))
+          .catch(() => showToast("Couldn't reach the clipboard.", { tone: 'warn' }));
+      };
+
+      const exportCSV = () => {
+        if (!requireLogs()) return;
+        const rows = [['Timestamp', 'Techniques', 'Categories', 'What happens on screen', 'Effect / why it matters']];
+        sortedLogs.forEach(l => rows.push([formatTime(l.timestamp), l.tags.join('; '), categoriesOf(l).join('; '), l.notes, l.effect]));
+        // The BOM makes Excel read accented characters (Mise-en-Scène) correctly
+        const csv = '﻿' + rows.map(r => r.map(csvCell).join(',')).join('\r\n');
+        downloadFile(`${baseName}_Analysis.csv`, csv, 'text/csv;charset=utf-8');
+        showToast('Downloaded CSV');
+      };
+
+      const printReport = () => {
+        if (requireLogs()) window.print();
+      };
+
+      const saveProject = () => {
+        const data = { app: 'CineMark', version: 3, savedAt: new Date().toISOString(), meta, logs, taxonomy };
+        downloadFile(`${baseName}.cinemark.json`, JSON.stringify(data, null, 2), 'application/json');
+        showToast('Project file saved');
+      };
+
+      const openProject = (e) => {
+        const file = e.target.files[0];
+        e.target.value = '';
+        if (!file) return;
+        file.text().then(text => {
+          const data = JSON.parse(text);
+          if (!data || !Array.isArray(data.logs)) throw new Error('not a project');
+          if (logs.length && !window.confirm('Replace your current entries with the ones in this file?')) return;
+          setMeta(m => ({ ...m, ...data.meta }));
+          setLogs(data.logs.map(normalizeLog));
+          if (data.taxonomy && typeof data.taxonomy === 'object') setTaxonomy(data.taxonomy);
+          resetForm();
+          showToast(`Opened ${file.name}`);
+        }).catch(() => showToast("That file isn't a CineMark project.", { tone: 'warn' }));
+      };
+
+      const startNewAnalysis = () => {
+        if (logs.length && !window.confirm(`Start a new analysis? This clears all ${logs.length} entries. (Save a project file first if you want to keep them.)`)) return;
+        setLogs([]);
+        setMeta(m => ({ ...m, filmTitle: '', director: '' }));
+        resetForm();
+        swReset();
+        showToast('Started a new analysis');
+      };
+
+      // ---------- Taxonomy management ----------
+      const addTag = (cat, name) => {
+        if (!name) return false;
+        if (tagCategory[name]) {
+          showToast(`"${name}" is already in ${tagCategory[name]}.`, { tone: 'warn' });
+          return false;
+        }
+        setTaxonomy(t => ({ ...t, [cat]: [...t[cat], name] }));
+        return true;
+      };
+      const removeTag = (cat, name) => setTaxonomy(t => ({ ...t, [cat]: t[cat].filter(x => x !== name) }));
+      const addCategory = (name) => {
+        if (!name) return false;
+        if (taxonomy[name]) {
+          showToast('That category already exists.', { tone: 'warn' });
+          return false;
+        }
+        setTaxonomy(t => ({ ...t, [name]: [] }));
+        return true;
+      };
+      const removeCategory = (cat) => {
+        if (Object.keys(taxonomy).length <= 1) {
+          showToast('Keep at least one category.', { tone: 'warn' });
+          return;
+        }
+        if (!window.confirm(`Delete "${cat}" and its ${taxonomy[cat].length} techniques? Entries already logged keep their tags.`)) return;
+        setTaxonomy(t => {
+          const { [cat]: _removed, ...rest } = t;
+          return rest;
+        });
+      };
+      const resetTaxonomy = () => {
+        if (window.confirm('Reset the technique list to the built-in defaults? Your custom techniques will be removed.')) {
+          setTaxonomy(DEFAULT_TAXONOMY);
+        }
+      };
+
+      // ---------- Render ----------
+      const panelClass = (mode) => `absolute inset-0 items-center justify-center ${sourceMode === mode ? 'flex' : 'hidden'}`;
+      const isFileUrl = location.protocol === 'file:';
+
+      return (
+        <>
+        <div className="flex flex-col min-h-screen no-print">
+
+          {/* TOP HEADER & NAVBAR */}
+          <header className="bg-cinema-900 border-b border-slate-800 sticky top-0 z-40 shadow-lg">
+            <div className="max-w-7xl w-full mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-4">
+
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-500 to-amber-400 flex items-center justify-center text-slate-950 font-black text-xl shadow-md">
+                  <i className="fa-solid fa-film"></i>
+                </div>
+                <div>
+                  <h1 className="font-bold text-lg text-slate-100 flex items-center gap-2">
+                    CineMark
+                    <span className="text-xs bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded-full font-mono border border-amber-500/30">v3</span>
+                  </h1>
+                  <p className="text-xs text-slate-400">Film Analysis & Timestamp Logging Tool</p>
+                </div>
+              </div>
+
+              <nav className="flex flex-wrap items-center bg-cinema-950 p-1 rounded-xl border border-slate-800">
+                <NavTab active={activeTab === 'logger'} onClick={() => setActiveTab('logger')} icon="fa-solid fa-stopwatch">Analysis Room</NavTab>
+                <NavTab active={activeTab === 'techniques'} onClick={() => setActiveTab('techniques')} icon="fa-solid fa-tags">Techniques & Glossary</NavTab>
+                <NavTab active={activeTab === 'export'} onClick={() => setActiveTab('export')} icon="fa-solid fa-file-export">Export ({logs.length})</NavTab>
+              </nav>
+
+              <button
+                onClick={() => setShowShortcutsModal(true)}
+                className="px-3 py-2 bg-cinema-800 hover:bg-cinema-700 text-slate-300 rounded-xl text-xs font-medium border border-slate-700 flex items-center gap-2 transition"
+              >
+                <i className="fa-solid fa-keyboard text-amber-400"></i>
+                <span className="hidden sm:inline">Shortcuts</span>
+              </button>
+            </div>
+
+            {/* FILM METADATA BAR */}
+            <div className="bg-cinema-950/80 border-t border-slate-800/80 px-4 py-2">
+              <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3 text-xs">
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                  <MetaField label="Film:" value={meta.filmTitle} onChange={updateMeta('filmTitle')} placeholder="e.g. Citizen Kane" width="w-44" />
+                  <MetaField label="Director:" value={meta.director} onChange={updateMeta('director')} placeholder="Director" width="w-36" />
+                  <MetaField label="Name:" value={meta.studentName} onChange={updateMeta('studentName')} placeholder="Your name" width="w-36" />
+                  <MetaField label="Class:" value={meta.classPeriod} onChange={updateMeta('classPeriod')} placeholder="e.g. AmLit P3" width="w-28" />
+                </div>
+                <div className="text-slate-500 text-[11px] flex items-center gap-2" title="Your work is saved in this browser on this computer">
+                  <i className={`fa-solid ${storageWarning ? 'fa-triangle-exclamation text-rose-400' : 'fa-cloud-arrow-down text-emerald-400'}`}></i>
+                  <span>{storageWarning ? 'Storage full — save a project file' : 'Autosaved in this browser'}</span>
+                </div>
+              </div>
+            </div>
+          </header>
+
+          {storageWarning && (
+            <div className="bg-rose-500/10 border-b border-rose-500/30 text-rose-200 text-xs px-4 py-2 text-center">
+              This browser's storage is full, so new screenshots won't survive a refresh. Use <b>Export → Save project file</b> to keep everything.
+            </div>
+          )}
+
+          <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6">
+
+            {/* VIEW 1: ANALYSIS ROOM */}
+            {activeTab === 'logger' && (
+              <div className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
+
+                  {/* LEFT: PLAYER */}
+                  <div className="md:col-span-7 space-y-4">
+                    <div className="bg-cinema-900 rounded-2xl border border-slate-800 overflow-hidden shadow-xl">
+
+                      {/* Source selector */}
+                      <div className="bg-cinema-950 p-2 border-b border-slate-800 flex flex-wrap items-center gap-2 text-xs">
+                        <span className="text-slate-400 font-medium px-2">Source:</span>
+                        {SOURCES.map(src => (
+                          <button
+                            key={src.id}
+                            onClick={() => switchSource(src.id)}
+                            aria-pressed={sourceMode === src.id}
+                            className={`px-3 py-1.5 rounded-lg font-medium transition flex items-center gap-1.5 whitespace-nowrap ${
+                              sourceMode === src.id ? 'bg-amber-500 text-slate-950 font-bold' : 'bg-cinema-800 text-slate-300 hover:bg-cinema-700'
+                            }`}
+                          >
+                            <i className={src.icon}></i>
+                            <span>{src.label}</span>
+                          </button>
+                        ))}
+                        <div className="ml-auto pl-2">
+                          {sourceMode === 'local' && localVideoSrc && (
+                            <button onClick={() => fileInputRef.current.click()} className="text-slate-400 hover:text-amber-400 whitespace-nowrap">Change video</button>
+                          )}
+                          {sourceMode === 'youtube' && youtubeId && (
+                            <button onClick={() => setYoutubeId('')} className="text-slate-400 hover:text-amber-400 whitespace-nowrap">Change link</button>
+                          )}
+                          {sourceMode === 'gdrive' && gdriveId && (
+                            <button onClick={() => setGdriveId('')} className="text-slate-400 hover:text-amber-400 whitespace-nowrap">Change link</button>
+                          )}
+                        </div>
+                      </div>
+
+                      <input ref={fileInputRef} type="file" accept="video/*" onChange={handleFileUpload} className="hidden" />
+
+                      {/* DISPLAY AREA — all sources stay mounted so switching tabs doesn't lose your place */}
+                      <div className="relative aspect-video bg-black overflow-hidden">
+
+                        {/* LOCAL VIDEO */}
+                        <div className={panelClass('local')}>
+                          {localVideoSrc ? (
+                            <video
+                              ref={videoRef}
+                              src={localVideoSrc}
+                              playsInline
+                              className="w-full h-full object-contain cursor-pointer"
+                              onClick={togglePlay}
+                              onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
+                              onLoadedMetadata={(e) => {
+                                setDuration(e.currentTarget.duration);
+                                e.currentTarget.playbackRate = playbackRateRef.current;
+                              }}
+                              onPlay={() => modeRef.current === 'local' && setIsPlaying(true)}
+                              onPause={() => modeRef.current === 'local' && setIsPlaying(false)}
+                            />
+                          ) : (
+                            <div className="text-center p-6 space-y-3">
+                              <div className="w-16 h-16 rounded-full bg-cinema-800 text-amber-400 flex items-center justify-center mx-auto text-2xl border border-slate-700">
+                                <i className="fa-solid fa-photo-film"></i>
+                              </div>
+                              <h3 className="font-bold text-slate-200 text-sm">No Video Selected</h3>
+                              {localFileName ? (
+                                <p className="text-xs text-slate-300 max-w-xs mx-auto">
+                                  Re-select <b className="text-amber-400">{localFileName}</b> to keep working — your notes are saved.
+                                </p>
+                              ) : (
+                                <p className="text-xs text-slate-400 max-w-xs mx-auto">Open an MP4, WebM, or MOV file. Each entry automatically saves a still of the frame.</p>
+                              )}
+                              <button
+                                onClick={() => fileInputRef.current.click()}
+                                className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl transition shadow"
+                              >
+                                Select Video File
+                              </button>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* YOUTUBE */}
+                        <div className={panelClass('youtube')}>
+                          <div ref={ytContainerRef} className={`yt-host absolute inset-0 ${youtubeId ? '' : 'hidden'}`}></div>
+                          {youtubeId && ytError != null && (
+                            <div className="absolute inset-0 bg-black/90 flex items-center justify-center p-6 text-center">
+                              <div className="space-y-2 max-w-sm">
+                                <i className="fa-solid fa-triangle-exclamation text-amber-400 text-2xl"></i>
+                                <p className="text-sm text-slate-200">{ytErrorMessage(ytError)}</p>
+                                {isFileUrl && <p className="text-xs text-slate-400">YouTube often blocks videos on pages opened straight from a computer's files. Try hosting this page online, or download the clip and use Local Video.</p>}
+                              </div>
+                            </div>
+                          )}
+                          {!youtubeId && (
+                            <form onSubmit={handleYoutubeSubmit} className="text-center p-6 space-y-3 w-full max-w-md">
+                              <i className="fa-brands fa-youtube text-red-500 text-4xl"></i>
+                              <h3 className="font-bold text-slate-200 text-sm">Paste a YouTube Link</h3>
+                              <div className="flex gap-2">
+                                <input
+                                  type="text"
+                                  placeholder="https://www.youtube.com/watch?v=..."
+                                  value={youtubeUrl}
+                                  onChange={(e) => setYoutubeUrl(e.target.value)}
+                                  aria-label="YouTube link"
+                                  className="flex-1 bg-cinema-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-amber-500"
+                                />
+                                <button type="submit" className="px-4 py-2 bg-amber-500 text-slate-950 font-bold text-xs rounded-xl hover:bg-amber-400">Load</button>
+                              </div>
+                              {isFileUrl && (
+                                <p className="text-[11px] text-slate-500">Heads up: YouTube may refuse to play on a page opened from your computer's files. It works when the page is hosted online.</p>
+                              )}
+                            </form>
+                          )}
+                        </div>
+
+                        {/* GOOGLE DRIVE */}
+                        <div className={panelClass('gdrive')}>
+                          {gdriveId ? (
+                            <iframe
+                              src={`https://drive.google.com/file/d/${gdriveId}/preview`}
+                              title="Google Drive video player"
+                              className="w-full h-full border-0"
+                              allow="autoplay; fullscreen"
+                              allowFullScreen
+                            ></iframe>
+                          ) : (
+                            <form onSubmit={handleGDriveSubmit} className="text-center p-6 space-y-3 w-full max-w-md">
+                              <i className="fa-brands fa-google-drive text-blue-400 text-4xl"></i>
+                              <h3 className="font-bold text-slate-200 text-sm">Paste a Google Drive Video Link</h3>
+                              <p className="text-[11px] text-slate-400">Sharing must be set so students can view the file.</p>
+                              <div className="flex gap-2">
+                                <input
+                                  type="text"
+                                  placeholder="https://drive.google.com/file/d/.../view"
+                                  value={gdriveUrl}
+                                  onChange={(e) => setGdriveUrl(e.target.value)}
+                                  aria-label="Google Drive link"
+                                  className="flex-1 bg-cinema-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-amber-500"
+                                />
+                                <button type="submit" className="px-4 py-2 bg-amber-500 text-slate-950 font-bold text-xs rounded-xl hover:bg-amber-400">Load</button>
+                              </div>
+                            </form>
+                          )}
+                        </div>
+
+                        {/* STOPWATCH */}
+                        <div className={panelClass('stopwatch')}>
+                          <div className="text-center p-6 space-y-4">
+                            <p className="text-[11px] text-slate-400 max-w-xs mx-auto">For a film playing somewhere else (on the projector, a DVD, another device). Start the clock when the film starts.</p>
+                            <div className="font-mono text-5xl md:text-6xl font-bold text-amber-400 tracking-wider bg-cinema-950 border border-slate-800 px-6 py-4 rounded-2xl shadow-inner">
+                              {formatTime(swSeconds)}
+                            </div>
+                            <div className="flex justify-center flex-wrap gap-2">
+                              <button
+                                onClick={swToggle}
+                                className={`px-5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
+                                  swRunning ? 'bg-rose-500 hover:bg-rose-400 text-white' : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950'
+                                }`}
+                              >
+                                <i className={`fa-solid ${swRunning ? 'fa-pause' : 'fa-play'}`}></i>
+                                <span>{swRunning ? 'Pause' : 'Start'}</span>
+                              </button>
+                              <button onClick={() => swNudge(-1)} className="px-3 py-2 bg-cinema-800 hover:bg-cinema-700 text-slate-300 rounded-xl text-xs font-mono border border-slate-700">-1s</button>
+                              <button onClick={() => swNudge(1)} className="px-3 py-2 bg-cinema-800 hover:bg-cinema-700 text-slate-300 rounded-xl text-xs font-mono border border-slate-700">+1s</button>
+                              <button onClick={swReset} className="px-4 py-2 bg-cinema-800 hover:bg-cinema-700 text-slate-300 rounded-xl text-xs font-medium border border-slate-700">Reset</button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* PLAYER CONTROLS (local video + YouTube) */}
+                      {canControlPlayer && (
+                        <div className="p-3 bg-cinema-950 border-t border-slate-800 space-y-3">
+                          {duration > 0 && (
+                            <div
+                              className="relative h-2.5 bg-cinema-800 rounded-full cursor-pointer"
+                              title="Click to jump; dots are your logged moments"
+                              onClick={(e) => {
+                                const r = e.currentTarget.getBoundingClientRect();
+                                seekTo(((e.clientX - r.left) / r.width) * duration);
+                              }}
+                            >
+                              <div className="absolute inset-y-0 left-0 bg-amber-500/40 rounded-full pointer-events-none" style={{ width: `${Math.min(100, (currentTime / duration) * 100)}%` }}></div>
+                              {sortedLogs.map(l => (
+                                <button
+                                  key={l.id}
+                                  title={`${formatTime(l.timestamp)} ${l.tags.join(', ')}`}
+                                  aria-label={`Jump to ${formatTime(l.timestamp)}`}
+                                  onClick={(e) => { e.stopPropagation(); seekTo(l.timestamp); }}
+                                  className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3 h-3 rounded-full bg-amber-400 ring-2 ring-cinema-950 hover:scale-125 transition"
+                                  style={{ left: `${Math.min(100, (l.timestamp / duration) * 100)}%` }}
+                                ></button>
+                              ))}
+                            </div>
+                          )}
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div className="flex items-center gap-2">
+                              <button onClick={togglePlay} aria-label={isPlaying ? 'Pause' : 'Play'} className="w-9 h-9 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg flex items-center justify-center font-bold">
+                                <i className={`fa-solid ${isPlaying ? 'fa-pause' : 'fa-play'}`}></i>
+                              </button>
+                              <button onClick={() => seekBy(-1)} className="px-2.5 py-1.5 bg-cinema-800 hover:bg-cinema-700 text-slate-300 rounded-lg text-xs font-mono">-5s</button>
+                              <button onClick={() => seekBy(1)} className="px-2.5 py-1.5 bg-cinema-800 hover:bg-cinema-700 text-slate-300 rounded-lg text-xs font-mono">+5s</button>
+                            </div>
+                            <div className="font-mono text-amber-400 font-bold text-sm">
+                              {formatTime(currentTime)} / {formatTime(duration)}
+                            </div>
+                            <div className="flex items-center gap-1 text-xs text-slate-400">
+                              <span className="mr-0.5">Speed:</span>
+                              {SPEEDS.map(rate => (
+                                <button
+                                  key={rate}
+                                  onClick={() => handleSpeedChange(rate)}
+                                  aria-pressed={playbackRate === rate}
+                                  className={`px-1.5 py-1 rounded text-[11px] font-mono ${
+                                    playbackRate === rate ? 'bg-amber-500 text-slate-950 font-bold' : 'bg-cinema-800 hover:bg-cinema-700 text-slate-300'
+                                  }`}
+                                >
+                                  {rate}x
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* DRIVE CLOCK — Drive's player can't report its time, so we keep a synced clock */}
+                      {sourceMode === 'gdrive' && gdriveId && (
+                        <div className="p-3 bg-cinema-950 border-t border-slate-800 space-y-2">
+                          <p className="text-[11px] text-slate-400">
+                            <i className="fa-solid fa-circle-info text-blue-400 mr-1"></i>
+                            Google Drive won't share the video's time with this page. Press <b>Start clock</b> when you press play, pause both together, and use ±1s to keep them matched.
+                          </p>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              onClick={swToggle}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 ${
+                                swRunning ? 'bg-rose-500 hover:bg-rose-400 text-white' : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950'
+                              }`}
+                            >
+                              <i className={`fa-solid ${swRunning ? 'fa-pause' : 'fa-play'}`}></i>
+                              {swRunning ? 'Pause clock' : 'Start clock'}
+                            </button>
+                            <span className="font-mono text-amber-400 font-bold text-sm px-2">{formatTime(swSeconds)}</span>
+                            <button onClick={() => swNudge(-1)} className="px-2.5 py-1.5 bg-cinema-800 hover:bg-cinema-700 text-slate-300 rounded-lg text-xs font-mono">-1s</button>
+                            <button onClick={() => swNudge(1)} className="px-2.5 py-1.5 bg-cinema-800 hover:bg-cinema-700 text-slate-300 rounded-lg text-xs font-mono">+1s</button>
+                            <button onClick={swReset} className="px-2.5 py-1.5 bg-cinema-800 hover:bg-cinema-700 text-slate-300 rounded-lg text-xs">Reset</button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* MARK BAR */}
+                      <div className="bg-cinema-950/90 border-t border-slate-800 p-3 flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Now:</span>
+                          <span className="font-mono text-xl font-bold text-amber-400">{formatTime(displaySeconds)}</span>
+                        </div>
+                        <button
+                          onClick={quickMark}
+                          className="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-slate-950 rounded-xl font-bold text-xs flex items-center gap-2 shadow-lg shadow-amber-500/20 active:scale-95 transition"
+                        >
+                          <i className="fa-solid fa-bookmark"></i>
+                          <span>MARK THIS MOMENT</span>
+                          <kbd className="text-[10px] bg-slate-950/20 px-1.5 py-0.5 rounded font-mono">M</kbd>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* RIGHT: OBSERVATION FORM */}
+                  <div className="md:col-span-5" ref={formRef}>
+                    <div data-log-form className={`bg-cinema-900 rounded-2xl border p-5 shadow-xl flex flex-col gap-4 scroll-mt-40 ${editingLogId ? 'border-amber-500/60' : 'border-slate-800'}`}>
+
+                      <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                        <h2 className="font-bold text-sm text-slate-200 flex items-center gap-2">
+                          <i className="fa-solid fa-pen-to-square text-amber-400"></i>
+                          {editingLogId ? 'Editing Entry' : 'Record an Observation'}
+                        </h2>
+                        {(editingLogId || pinned || selectedTags.length > 0 || noteText || effectText) && (
+                          <button onClick={resetForm} className="text-xs text-rose-400 hover:underline">
+                            {editingLogId ? 'Cancel edit' : 'Clear'}
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Timestamp */}
+                      <div className="flex items-center gap-3">
+                        {pinned && pinned.screenshot && (
+                          <img src={pinned.screenshot} alt="" className="w-20 h-12 object-cover rounded border border-slate-700" />
+                        )}
+                        <div className="flex-1 space-y-1">
+                          <div className="flex items-center gap-2">
+                            <label htmlFor="stamp" className="text-xs text-slate-300 font-medium">Timestamp</label>
+                            <input
+                              id="stamp"
+                              value={pinned ? pinnedInput : formatTime(displaySeconds)}
+                              onFocus={() => { if (!pinnedRef.current) pinNow({ pause: false }); }}
+                              onChange={(e) => setPinnedInput(e.target.value)}
+                              onBlur={commitPinnedInput}
+                              onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+                              className={`w-24 bg-cinema-950 border rounded-lg px-2 py-1 font-mono text-sm font-bold focus:outline-none focus:border-amber-500 ${
+                                pinned ? 'border-amber-500/50 text-amber-400' : 'border-slate-700 text-slate-500'
+                              }`}
+                            />
+                            <button
+                              onClick={() => pinNow({ pause: false })}
+                              title="Set the timestamp to the current playback time"
+                              className="text-[11px] text-slate-400 hover:text-amber-400 flex items-center gap-1"
+                            >
+                              <i className="fa-solid fa-location-crosshairs"></i> Use current time
+                            </button>
+                          </div>
+                          <p className="text-[10px] text-slate-500">
+                            {pinned
+                              ? <span><i className="fa-solid fa-thumbtack mr-1 text-amber-400"></i>Locked in. Click the time to type a different one.</span>
+                              : 'Locks in as soon as you pick a technique or start writing.'}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Category tabs */}
+                      <div className="flex items-center gap-1 overflow-x-auto pb-1 text-xs border-b border-slate-800/80">
+                        {Object.keys(taxonomy).map(cat => (
+                          <button
+                            key={cat}
+                            onClick={() => setSelectedCategoryTab(cat)}
+                            className={`px-3 py-1.5 rounded-lg font-semibold whitespace-nowrap transition ${
+                              activeCategory === cat ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40' : 'text-slate-400 hover:text-slate-200 border border-transparent'
+                            }`}
+                          >
+                            {cat}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Technique pills */}
+                      <div className="space-y-2">
+                        <span className="text-[11px] text-slate-400 font-medium">Click the techniques you notice (hover for a definition):</span>
+                        <div className="flex flex-wrap gap-1.5 max-h-48 overflow-y-auto p-1.5 bg-cinema-950 rounded-xl border border-slate-800/80">
+                          {(taxonomy[activeCategory] || []).map(tag => {
+                            const isSelected = selectedTags.includes(tag);
+                            return (
+                              <button
+                                key={tag}
+                                type="button"
+                                onClick={() => toggleTag(tag)}
+                                title={DEFINITIONS[tag] || ''}
+                                aria-pressed={isSelected}
+                                className={`px-2.5 py-1 rounded-lg text-xs font-medium transition flex items-center gap-1.5 ${
+                                  isSelected
+                                    ? 'bg-amber-500 text-slate-950 font-bold shadow'
+                                    : 'bg-cinema-800 text-slate-300 hover:bg-cinema-700 border border-slate-700'
+                                }`}
+                              >
+                                {isSelected && <i className="fa-solid fa-check text-[10px]"></i>}
+                                <span>{tag}</span>
+                              </button>
+                            );
+                          })}
+                          {(taxonomy[activeCategory] || []).length === 0 && (
+                            <p className="text-[11px] text-slate-500 p-2">No techniques here yet — add some in the Techniques tab.</p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Selected tags */}
+                      {selectedTags.length > 0 && (
+                        <div className="space-y-1">
+                          <span className="text-[10px] uppercase text-slate-400 font-bold tracking-wider">Selected ({selectedTags.length}):</span>
+                          <div className="flex flex-wrap gap-1">
+                            {selectedTags.map(tag => (
+                              <span key={tag} className="bg-amber-500/10 text-amber-400 border border-amber-500/30 text-[11px] pl-2 pr-1 py-0.5 rounded-md flex items-center gap-1">
+                                {tag}
+                                <button onClick={() => removeSelectedTag(tag)} aria-label={`Remove ${tag}`} className="px-1 hover:text-amber-200">
+                                  <i className="fa-solid fa-xmark text-[10px]"></i>
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Notes */}
+                      <div className="space-y-1">
+                        <label htmlFor="notes" className="text-xs text-slate-300 font-medium">What happens on screen?</label>
+                        <textarea
+                          id="notes"
+                          ref={noteRef}
+                          rows={3}
+                          placeholder="e.g., The camera stays low as the officer walks in, so he towers over the room..."
+                          value={noteText}
+                          onFocus={ensurePinned}
+                          onChange={(e) => { ensurePinned(); setNoteText(e.target.value); }}
+                          className="w-full bg-cinema-950 border border-slate-700 rounded-xl p-3 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-500 transition resize-y"
+                        ></textarea>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label htmlFor="effect" className="text-xs text-slate-300 font-medium flex items-center justify-between">
+                          <span>Effect: why does it matter?</span>
+                          <span className="text-[10px] text-slate-500">Mood, character, theme, meaning</span>
+                        </label>
+                        <textarea
+                          id="effect"
+                          rows={3}
+                          placeholder="e.g., It makes him feel threatening and shows who holds the power in this scene..."
+                          value={effectText}
+                          onFocus={ensurePinned}
+                          onChange={(e) => { ensurePinned(); setEffectText(e.target.value); }}
+                          className="w-full bg-cinema-950 border border-slate-700 rounded-xl p-3 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-500 transition resize-y"
+                        ></textarea>
+                      </div>
+
+                      <label className="flex items-center gap-2 text-[11px] text-slate-400 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={settings.autoPause}
+                          onChange={(e) => setSettings(s => ({ ...s, autoPause: e.target.checked }))}
+                          className="accent-amber-500"
+                        />
+                        Pause the video while I write an entry
+                      </label>
+
+                      <button
+                        type="button"
+                        onClick={handleSaveLog}
+                        className="w-full py-3 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl transition shadow-lg shadow-amber-500/20 flex items-center justify-center gap-2"
+                      >
+                        <i className="fa-solid fa-floppy-disk"></i>
+                        {editingLogId ? 'Update Entry' : 'Save to Timeline'}
+                        <kbd className="text-[10px] bg-slate-950/20 px-1.5 py-0.5 rounded font-mono">{MOD_KEY}+Enter</kbd>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* TIMELINE */}
+                <div className="bg-cinema-900 rounded-2xl border border-slate-800 p-5 shadow-xl space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-4">
+                    <div className="flex items-center gap-2">
+                      <i className="fa-solid fa-timeline text-amber-400 text-base"></i>
+                      <h2 className="font-bold text-sm text-slate-100">Observation Timeline</h2>
+                      <span className="text-xs text-slate-400 bg-cinema-950 px-2.5 py-0.5 rounded-full border border-slate-800">
+                        {filteredLogs.length === logs.length ? `${logs.length} entries` : `${filteredLogs.length} of ${logs.length}`}
+                      </span>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                      <div className="relative flex-1 sm:w-48">
+                        <i className="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-slate-500 text-xs"></i>
+                        <input
+                          type="text"
+                          placeholder="Search notes or tags..."
+                          aria-label="Search entries"
+                          value={searchFilter}
+                          onChange={(e) => setSearchFilter(e.target.value)}
+                          className="w-full bg-cinema-950 border border-slate-700 rounded-xl pl-8 pr-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-amber-500"
+                        />
+                      </div>
+                      <select
+                        value={categoryFilter}
+                        onChange={(e) => setCategoryFilter(e.target.value)}
+                        aria-label="Filter by category"
+                        className="bg-cinema-950 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-amber-500"
+                      >
+                        <option value="All">All Categories</option>
+                        {Object.keys(taxonomy).map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                        {hasOther && <option value="Other">Other</option>}
+                      </select>
+                    </div>
+                  </div>
+
+                  {filteredLogs.length === 0 ? (
+                    <div className="text-center py-12 text-slate-500 space-y-2">
+                      <i className="fa-solid fa-box-open text-3xl"></i>
+                      {logs.length === 0 ? (
+                        <p className="text-xs max-w-sm mx-auto">
+                          Nothing logged yet. When you notice a technique, press <kbd className="text-amber-400 font-mono">M</kbd> (or click a technique), describe it, then save.
+                        </p>
+                      ) : (
+                        <p className="text-xs">No entries match that search.</p>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {filteredLogs.map(log => (
+                        <div
+                          key={log.id}
+                          className={`bg-cinema-950 rounded-xl border p-4 space-y-2 transition ${
+                            editingLogId === log.id ? 'border-amber-500/60' : 'border-slate-800 hover:border-slate-700'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between border-b border-slate-800/80 pb-2 gap-2">
+                            <button
+                              onClick={() => jumpToLog(log)}
+                              title="Jump to this moment"
+                              className="font-mono text-sm font-bold text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 px-2.5 py-1 rounded-lg border border-amber-500/30 flex items-center gap-1.5 transition"
+                            >
+                              <i className="fa-solid fa-play text-[10px]"></i>
+                              <span>{formatTime(log.timestamp)}</span>
+                            </button>
+                            <span className="text-[10px] text-slate-500 truncate flex-1">{categoriesOf(log).join(' · ')}</span>
+                            <div className="flex items-center gap-1">
+                              <button onClick={() => handleEditLog(log)} className="p-1.5 text-slate-400 hover:text-amber-400 transition" title="Edit entry" aria-label="Edit entry">
+                                <i className="fa-solid fa-pen"></i>
+                              </button>
+                              <button onClick={() => handleDeleteLog(log)} className="p-1.5 text-slate-400 hover:text-rose-400 transition" title="Delete entry" aria-label="Delete entry">
+                                <i className="fa-solid fa-trash-can"></i>
+                              </button>
+                            </div>
+                          </div>
+
+                          {log.screenshot && (
+                            <img src={log.screenshot} alt={`Frame at ${formatTime(log.timestamp)}`} className="w-full h-32 object-cover rounded-lg border border-slate-800" />
+                          )}
+
+                          {log.tags.length > 0 && (
+                            <div className="flex flex-wrap gap-1">
+                              {log.tags.map(tag => (
+                                <span key={tag} title={DEFINITIONS[tag] || ''} className="bg-cinema-800 text-slate-300 text-[10px] px-2 py-0.5 rounded border border-slate-700 font-medium">
+                                  {tag}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+
+                          {log.notes && (
+                            <p className="text-xs text-slate-300 leading-relaxed whitespace-pre-line">{log.notes}</p>
+                          )}
+                          {log.effect && (
+                            <p className="text-xs text-slate-300 leading-relaxed bg-cinema-900/60 p-2.5 rounded-lg border border-slate-800/80 whitespace-pre-line">
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400/80 block mb-0.5">Effect</span>
+                              {log.effect}
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* VIEW 2: TECHNIQUES & GLOSSARY */}
+            {activeTab === 'techniques' && (
+              <div className="bg-cinema-900 rounded-2xl border border-slate-800 p-6 shadow-xl space-y-6">
+                <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-800 pb-4">
+                  <div>
+                    <h2 className="text-base font-bold text-slate-100 flex items-center gap-2">
+                      <i className="fa-solid fa-tags text-amber-400"></i>
+                      Techniques & Glossary
+                    </h2>
+                    <p className="text-xs text-slate-400">The techniques students can tag, with definitions. Add your own or remove ones you don't teach.</p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="w-60"><AddInput placeholder="New category name" buttonLabel="Category" onAdd={addCategory} /></div>
+                    <button onClick={resetTaxonomy} className="px-3 py-1.5 text-xs text-slate-400 hover:text-amber-400 flex items-center gap-1.5">
+                      <i className="fa-solid fa-rotate-left"></i> Reset to defaults
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {Object.keys(taxonomy).map(category => (
+                    <div key={category} className="bg-cinema-950 rounded-xl border border-slate-800 p-4 space-y-3 flex flex-col">
+                      <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                        <h3 className="font-bold text-xs text-amber-400 uppercase tracking-wider">{category}</h3>
+                        <button onClick={() => removeCategory(category)} className="text-slate-500 hover:text-rose-400 text-xs" title="Delete category" aria-label={`Delete ${category}`}>
+                          <i className="fa-solid fa-trash-can"></i>
+                        </button>
+                      </div>
+                      <ul className="space-y-1.5 flex-1 max-h-96 overflow-y-auto pr-1">
+                        {taxonomy[category].map(tag => (
+                          <li key={tag} className="group flex items-start justify-between gap-2 text-xs">
+                            <div>
+                              <span className="text-slate-200 font-semibold">{tag}</span>
+                              {DEFINITIONS[tag] && <span className="text-slate-400"> — {DEFINITIONS[tag]}</span>}
+                            </div>
+                            <button
+                              onClick={() => removeTag(category, tag)}
+                              aria-label={`Remove ${tag}`}
+                              className="text-slate-600 hover:text-rose-400 opacity-0 group-hover:opacity-100 focus:opacity-100 transition"
+                            >
+                              <i className="fa-solid fa-xmark"></i>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                      <AddInput placeholder="Add a technique" onAdd={(name) => addTag(category, name)} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* VIEW 3: EXPORT */}
+            {activeTab === 'export' && (
+              <div className="space-y-6">
+                <div className="bg-cinema-900 rounded-2xl border border-slate-800 p-6 shadow-xl space-y-6">
+                  <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-800 pb-4">
+                    <div>
+                      <h2 className="text-base font-bold text-slate-100 flex items-center gap-2">
+                        <i className="fa-solid fa-file-export text-amber-400"></i>
+                        Export Your Analysis
+                      </h2>
+                      <p className="text-xs text-slate-400">Paste it into a Google Doc, print it or save it as a PDF, or download a spreadsheet.</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <ExportButton onClick={copyForDocs} icon="fa-solid fa-copy" primary>Copy for Google Docs</ExportButton>
+                      <ExportButton onClick={printReport} icon="fa-solid fa-print">Print / Save PDF</ExportButton>
+                      <ExportButton onClick={exportCSV} icon="fa-solid fa-file-csv">Download CSV</ExportButton>
+                      <ExportButton onClick={exportMarkdown} icon="fa-brands fa-markdown">Copy Markdown</ExportButton>
+                    </div>
+                  </div>
+
+                  <label className="flex items-center gap-2 text-[11px] text-slate-400 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={settings.printShots}
+                      onChange={(e) => setSettings(s => ({ ...s, printShots: e.target.checked }))}
+                      className="accent-amber-500"
+                    />
+                    Include frame screenshots when printing
+                  </label>
+
+                  <div className="bg-cinema-950 rounded-xl border border-slate-800 p-6 space-y-4 font-mono text-xs text-slate-300">
+                    <div className="border-b border-slate-800 pb-3">
+                      <h3 className="text-sm font-bold text-amber-400">{filmLabel}</h3>
+                      {metaLine && <p className="text-slate-400">{metaLine}</p>}
+                    </div>
+                    {sortedLogs.length === 0 ? (
+                      <p className="text-slate-500 font-sans">No entries yet.</p>
+                    ) : (
+                      <div className="space-y-3">
+                        {sortedLogs.map(log => (
+                          <div key={log.id} className="border-b border-slate-800/60 pb-2">
+                            <span className="text-amber-400 font-bold">[{formatTime(log.timestamp)}]</span>{' '}
+                            <span className="text-slate-400">{log.tags.length > 0 && `(${log.tags.join(', ')})`}</span>
+                            {log.notes && <p className="font-sans text-slate-200 mt-1 whitespace-pre-line">{log.notes}</p>}
+                            {log.effect && <p className="font-sans text-slate-400 mt-1 whitespace-pre-line"><span className="text-amber-400/80">Effect:</span> {log.effect}</p>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="bg-cinema-900 rounded-2xl border border-slate-800 p-6 shadow-xl space-y-3">
+                  <h2 className="text-sm font-bold text-slate-100 flex items-center gap-2">
+                    <i className="fa-solid fa-folder-open text-amber-400"></i>
+                    Project File
+                  </h2>
+                  <p className="text-xs text-slate-400 max-w-2xl">
+                    Your work autosaves in this browser, but only on this computer. Save a project file to switch computers, keep a backup, or turn in your full log, screenshots included.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <ExportButton onClick={saveProject} icon="fa-solid fa-download">Save project file</ExportButton>
+                    <ExportButton onClick={() => projectInputRef.current.click()} icon="fa-solid fa-folder-open">Open project file</ExportButton>
+                    <button onClick={startNewAnalysis} className="px-4 py-2 rounded-xl text-xs font-bold text-rose-300 hover:bg-rose-500/10 border border-rose-500/30 flex items-center gap-2">
+                      <i className="fa-solid fa-file-circle-plus"></i> Start new analysis
+                    </button>
+                  </div>
+                  <input ref={projectInputRef} type="file" accept=".json,application/json" onChange={openProject} className="hidden" />
+                </div>
+              </div>
+            )}
+          </main>
+
+          {/* TOAST */}
+          {toast && (
+            <div
+              key={toast.key}
+              role="status"
+              aria-live="polite"
+              className={`fixed bottom-6 right-6 font-bold px-4 py-2.5 rounded-xl shadow-2xl text-xs flex items-center gap-3 z-50 ${
+                toast.tone === 'warn' ? 'bg-rose-500 text-white' : 'bg-amber-500 text-slate-950'
+              }`}
+            >
+              <i className={`fa-solid ${toast.tone === 'warn' ? 'fa-circle-exclamation' : 'fa-circle-check'}`}></i>
+              <span>{toast.msg}</span>
+              {toast.action && (
+                <button
+                  onClick={() => { toast.action.run(); setToast(null); }}
+                  className="underline underline-offset-2 hover:no-underline"
+                >
+                  {toast.action.label}
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* SHORTCUTS MODAL */}
+          {showShortcutsModal && (
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50" onClick={() => setShowShortcutsModal(false)}>
+              <div role="dialog" aria-modal="true" aria-label="Keyboard shortcuts" className="bg-cinema-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                  <h3 className="font-bold text-slate-100 text-sm flex items-center gap-2">
+                    <i className="fa-solid fa-keyboard text-amber-400"></i>
+                    Keyboard Shortcuts
+                  </h3>
+                  <button onClick={() => setShowShortcutsModal(false)} className="text-slate-400 hover:text-slate-100" aria-label="Close">
+                    <i className="fa-solid fa-xmark"></i>
+                  </button>
+                </div>
+
+                <div className="space-y-2 text-xs">
+                  {[
+                    ['Play / pause (or start / stop the clock)', 'Space'],
+                    ['Mark this moment and start writing', 'M'],
+                    ['Save the entry (while typing)', `${MOD_KEY}+Enter`],
+                    ['Leave a text box so shortcuts work again', 'Esc'],
+                    ['Back 5 seconds (clock: −1s)', '←'],
+                    ['Forward 5 seconds (clock: +1s)', '→']
+                  ].map(([label, key]) => (
+                    <div key={label} className="flex justify-between items-center bg-cinema-950 p-2 rounded-lg border border-slate-800">
+                      <span className="text-slate-300">{label}</span>
+                      <kbd className="bg-cinema-800 text-amber-400 font-mono px-2 py-0.5 rounded border border-slate-700 whitespace-nowrap">{key}</kbd>
+                    </div>
+                  ))}
+                </div>
+
+                <button
+                  onClick={() => setShowShortcutsModal(false)}
+                  className="w-full py-2 bg-cinema-800 hover:bg-cinema-700 text-slate-200 font-bold text-xs rounded-xl border border-slate-700"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* PRINT REPORT — only visible when printing */}
+        <div id="print-report" className="print-only">
+          <h1>Film Analysis: {filmLabel}</h1>
+          <p className="meta">{[metaLine, new Date().toLocaleDateString()].filter(Boolean).join(' | ')}</p>
+          <table>
+            <thead>
+              <tr>
+                <th style={{ width: '1%' }}>Time</th>
+                <th style={{ width: '22%' }}>Techniques</th>
+                <th>Observation</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedLogs.map(l => (
+                <tr key={l.id}>
+                  <td className="time">{formatTime(l.timestamp)}</td>
+                  <td>{l.tags.join(', ')}</td>
+                  <td>
+                    {settings.printShots && l.screenshot && <img src={l.screenshot} alt="" />}
+                    {l.notes && <div style={{ whiteSpace: 'pre-line' }}>{l.notes}</div>}
+                    {l.effect && (
+                      <div style={{ marginTop: '4pt', whiteSpace: 'pre-line' }}>
+                        <span className="label">Effect: </span>{l.effect}
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        </>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
