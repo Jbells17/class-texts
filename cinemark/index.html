@@ -203,10 +203,12 @@
       return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
     };
 
-    // "84", "1:24", "1:02:03" -> seconds; null when it isn't a time
+    // "84", "1:24", "1:02:03" -> seconds; null when it isn't a time.
+    // The leading number can be anything ("95:00" is fine), but later parts must be under 60.
     const parseTime = (str) => {
       const parts = String(str).trim().split(':');
       if (parts.length > 3 || parts.some(p => !/^\d+$/.test(p))) return null;
+      if (parts.slice(1).some(p => Number(p) > 59)) return null;
       return parts.reduce((total, p) => total * 60 + Number(p), 0);
     };
 
@@ -463,7 +465,7 @@
       // Observation timeline
       const [logs, setLogs] = useState(saved.logs);
       const [settings, setSettings] = useState({
-        autoPause: true, printGroup: 'time', printTags: true, printEffect: true, printShots: true, ...saved.settings
+        autoPause: true, driveAutoClock: true, printGroup: 'time', printTags: true, printEffect: true, printShots: true, ...saved.settings
       });
       const [printExcluded, setPrintExcluded] = useState(Array.isArray(saved.printExcluded) ? saved.printExcluded : []);
 
@@ -542,6 +544,37 @@
         return { baseMs: Math.max(0, total + delta * 1000), startedAt: s.startedAt != null ? now : null };
       });
       const swReset = () => setSw({ baseMs: 0, startedAt: null });
+      const swSet = (secs) => setSw(s => ({ baseMs: Math.max(0, secs) * 1000, startedAt: s.startedAt != null ? Date.now() : null }));
+      const swRunningRef = useRef(false);
+      swRunningRef.current = swRunning;
+      const [clockDraft, setClockDraft] = useState(null); // text while someone types a time into the Drive clock
+
+      // Drive's player won't say when it plays or pauses, and Google blocks other sites from streaming
+      // Drive files themselves. But the page can tell when someone clicks into the player (the window
+      // loses focus to its frame), so each click flips the clock: Drive's ▶ starts it, pause stops it.
+      const driveFrameRef = useRef(null);
+      useEffect(() => {
+        if (sourceMode !== 'gdrive' || !gdriveId || !settings.driveAutoClock) return;
+        const onBlur = () => setTimeout(() => {
+          const frame = driveFrameRef.current;
+          if (!frame || document.activeElement !== frame) return; // focus went to another tab or app instead
+          const starting = !swRunningRef.current;
+          swToggle();
+          showToast(starting ? 'Clock started with the video' : 'Clock paused with the video');
+          // Take focus back so the next click in the player is noticed too
+          frame.blur();
+          window.focus();
+        }, 0);
+        window.addEventListener('blur', onBlur);
+        return () => window.removeEventListener('blur', onBlur);
+      }, [sourceMode, gdriveId, settings.driveAutoClock]);
+
+      const commitClockDraft = () => {
+        const secs = parseTime(clockDraft || '');
+        if (secs != null) swSet(secs);
+        else if ((clockDraft || '').trim()) showToast('Type the time like 12:30 or 1:02:03.', { tone: 'warn' });
+        setClockDraft(null);
+      };
 
       // ---------- YouTube player ----------
       useEffect(() => {
@@ -1422,6 +1455,7 @@
                         <div className={panelClass('gdrive')}>
                           {gdriveId ? (
                             <iframe
+                              ref={driveFrameRef}
                               src={`https://drive.google.com/file/d/${gdriveId}/preview`}
                               title="Google Drive video player"
                               className="w-full h-full border-0"
@@ -1533,7 +1567,9 @@
                         <div className="p-3 bg-cinema-950 border-t border-slate-800 space-y-2">
                           <p className="text-[11px] text-slate-400">
                             <i className="fa-solid fa-circle-info text-blue-400 mr-1"></i>
-                            Google Drive won't share the video's time with this page. Press <b>Start clock</b> when you press play, pause both together, and use ±1s to keep them matched.
+                            {settings.driveAutoClock
+                              ? <>Google Drive won't share the video's time, so CineMark keeps a clock. <b>Just press play in the video</b>: the clock starts and pauses with your clicks. If you drag Drive's slider, click the clock and type the new time.</>
+                              : <>Google Drive won't share the video's time with this page. Press <b>Start clock</b> when you press play, pause both together, and use ±1s to keep them matched.</>}
                           </p>
                           <div className="flex flex-wrap items-center gap-2">
                             <button
@@ -1545,11 +1581,29 @@
                               <i className={`fa-solid ${swRunning ? 'fa-pause' : 'fa-play'}`}></i>
                               {swRunning ? 'Pause clock' : 'Start clock'}
                             </button>
-                            <span className="font-mono text-amber-400 font-bold text-sm px-2">{formatTime(swSeconds)}</span>
+                            <input
+                              aria-label="Clock time (click to type a new time)"
+                              title="Click to type a new time, e.g. after skipping ahead in the video"
+                              value={clockDraft != null ? clockDraft : formatTime(swSeconds)}
+                              onFocus={(e) => { setClockDraft(formatTime(swSeconds)); e.currentTarget.select(); }}
+                              onChange={(e) => setClockDraft(e.target.value)}
+                              onBlur={commitClockDraft}
+                              onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+                              className="w-24 bg-transparent hover:bg-cinema-800 focus:bg-cinema-800 border border-transparent focus:border-amber-500 rounded-lg px-2 py-1 font-mono text-amber-400 font-bold text-sm focus:outline-none cursor-text"
+                            />
                             <button onClick={() => swNudge(-1)} className="px-2.5 py-1.5 bg-cinema-800 hover:bg-cinema-700 text-slate-300 rounded-lg text-xs font-mono">-1s</button>
                             <button onClick={() => swNudge(1)} className="px-2.5 py-1.5 bg-cinema-800 hover:bg-cinema-700 text-slate-300 rounded-lg text-xs font-mono">+1s</button>
                             <button onClick={swReset} className="px-2.5 py-1.5 bg-cinema-800 hover:bg-cinema-700 text-slate-300 rounded-lg text-xs">Reset</button>
                           </div>
+                          <label className="flex items-center gap-2 text-[11px] text-slate-400 cursor-pointer select-none">
+                            <input
+                              type="checkbox"
+                              checked={settings.driveAutoClock}
+                              onChange={(e) => setSettings(s => ({ ...s, driveAutoClock: e.target.checked }))}
+                              className="accent-amber-500"
+                            />
+                            Start and pause the clock when I click play or pause in the video
+                          </label>
                         </div>
                       )}
 
