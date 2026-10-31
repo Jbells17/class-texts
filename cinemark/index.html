@@ -52,16 +52,22 @@
       .no-print { display: none !important; }
       .print-only { display: block !important; }
     }
-    #print-report { font-family: Georgia, 'Times New Roman', serif; color: #111; font-size: 11pt; }
-    #print-report h1 { font-size: 18pt; margin: 0 0 4pt; }
-    #print-report .meta { color: #444; margin-bottom: 14pt; }
-    #print-report table { width: 100%; border-collapse: collapse; }
-    #print-report th, #print-report td { border: 1px solid #999; padding: 6pt; vertical-align: top; text-align: left; }
-    #print-report th { background: #eee; }
-    #print-report tr { break-inside: avoid; }
-    #print-report img { width: 1.8in; display: block; margin-bottom: 4pt; }
-    #print-report .time { font-family: ui-monospace, Menlo, monospace; white-space: nowrap; font-weight: bold; }
-    #print-report .label { font-size: 8pt; text-transform: uppercase; letter-spacing: 0.05em; color: #666; }
+    /* The report layout, shared by the on-screen preview and the printed page */
+    .report { font-family: Georgia, 'Times New Roman', serif; color: #111; font-size: 11pt; line-height: 1.4; }
+    .report h1 { font-size: 18pt; font-weight: bold; margin: 0 0 4pt; }
+    .report h2 { font-size: 13pt; font-weight: bold; margin: 16pt 0 2pt; break-after: avoid; }
+    .report .meta { color: #444; margin-bottom: 14pt; }
+    .report .group-def { color: #555; font-style: italic; margin: 0 0 6pt; break-after: avoid; }
+    .report table { width: 100%; border-collapse: collapse; margin-bottom: 6pt; }
+    .report th, .report td { border: 1px solid #999; padding: 6pt; vertical-align: top; text-align: left; }
+    .report th { background: #eee; }
+    .report tr { break-inside: avoid; }
+    .report img { width: 1.8in; display: block; margin-bottom: 4pt; }
+    .report .time { font-family: ui-monospace, Menlo, monospace; white-space: nowrap; font-weight: bold; }
+    .report .label { font-size: 8pt; text-transform: uppercase; letter-spacing: 0.05em; color: #666; }
+    .report .pick { width: 1%; text-align: center; }
+    .report .pick input { width: 15px; height: 15px; accent-color: #d97706; cursor: pointer; }
+    .report tr.excluded td:not(.pick) { opacity: 0.3; }
   </style>
 </head>
 <body class="text-slate-100 min-h-screen flex flex-col antialiased selection:bg-amber-500 selection:text-slate-950">
@@ -354,6 +360,66 @@
       );
     }
 
+    const PRINT_GROUPINGS = [
+      { id: 'time', label: 'Film order' },
+      { id: 'category', label: 'Category' },
+      { id: 'technique', label: 'Technique' }
+    ];
+    const NO_EXCLUSIONS = new Set();
+
+    // The organized report. With onToggle it's the interactive on-screen preview (include checkboxes);
+    // without it, it's the printed page.
+    function Report({ title, metaLine, groups, show, excluded, onToggle }) {
+      const interactive = !!onToggle;
+      return (
+        <div className="report">
+          <h1>Film Analysis: {title}</h1>
+          <p className="meta">{[metaLine, new Date().toLocaleDateString()].filter(Boolean).join(' | ')}</p>
+          {groups.map(group => (
+            <section key={group.key}>
+              {group.title && <h2>{group.title}</h2>}
+              {group.subtitle && <p className="group-def">{group.subtitle}</p>}
+              <table>
+                <thead>
+                  <tr>
+                    {interactive && <th className="pick"><span className="sr-only">Include</span></th>}
+                    <th style={{ width: '1%' }}>Time</th>
+                    {show.tags && <th style={{ width: '22%' }}>Techniques</th>}
+                    <th>Observation</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {group.entries.map(l => {
+                    const off = excluded.has(l.id);
+                    return (
+                      <tr key={l.id} className={off ? 'excluded' : ''}>
+                        {interactive && (
+                          <td className="pick">
+                            <input type="checkbox" checked={!off} onChange={() => onToggle(l.id)} aria-label={`Include the entry at ${formatTime(l.timestamp)}`} />
+                          </td>
+                        )}
+                        <td className="time">{formatTime(l.timestamp)}</td>
+                        {show.tags && <td>{l.tags.join(', ')}</td>}
+                        <td>
+                          {show.shots && l.screenshot && <img src={l.screenshot} alt="" />}
+                          {l.notes && <div style={{ whiteSpace: 'pre-line' }}>{l.notes}</div>}
+                          {show.effect && l.effect && (
+                            <div style={{ marginTop: '4pt', whiteSpace: 'pre-line' }}>
+                              <span className="label">Effect: </span>{l.effect}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </section>
+          ))}
+        </div>
+      );
+    }
+
     // ---------- App ----------
 
     function App() {
@@ -396,7 +462,10 @@
 
       // Observation timeline
       const [logs, setLogs] = useState(saved.logs);
-      const [settings, setSettings] = useState({ autoPause: true, printShots: true, ...saved.settings });
+      const [settings, setSettings] = useState({
+        autoPause: true, printGroup: 'time', printTags: true, printEffect: true, printShots: true, ...saved.settings
+      });
+      const [printExcluded, setPrintExcluded] = useState(Array.isArray(saved.printExcluded) ? saved.printExcluded : []);
 
       // UI
       const [activeTab, setActiveTab] = useState('logger');
@@ -435,7 +504,7 @@
       // Debounced so typing in a field doesn't re-serialize every screenshot on each keystroke
       useEffect(() => {
         const t = setTimeout(() => {
-          const data = { meta, logs, taxonomy, settings, sourceMode, youtubeId, gdriveId, localFileName };
+          const data = { meta, logs, taxonomy, settings, printExcluded, sourceMode, youtubeId, gdriveId, localFileName };
           try {
             localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
             setStorageWarning(false);
@@ -448,7 +517,7 @@
           }
         }, 400);
         return () => clearTimeout(t);
-      }, [meta, logs, taxonomy, settings, sourceMode, youtubeId, gdriveId, localFileName]);
+      }, [meta, logs, taxonomy, settings, printExcluded, sourceMode, youtubeId, gdriveId, localFileName]);
 
       // ---------- Stopwatch ----------
       useEffect(() => {
@@ -888,15 +957,59 @@
         return false;
       };
 
+      // ---------- Organize & print ----------
+      const excludedSet = useMemo(() => new Set(printExcluded), [printExcluded]);
+      const includedLogs = sortedLogs.filter(l => !excludedSet.has(l.id));
+      const printShow = { tags: settings.printTags, effect: settings.printEffect, shots: settings.printShots };
+      const toggleExcluded = (id) => setPrintExcluded(ids => ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id]);
+
+      // Split entries into report sections. By category or technique, an entry with several
+      // tags appears under each one; headings follow the order of the technique list.
+      const buildGroups = (entries) => {
+        const mode = settings.printGroup;
+        if (mode !== 'category' && mode !== 'technique') {
+          return entries.length ? [{ key: 'all', title: null, subtitle: null, entries }] : [];
+        }
+        const groups = new Map();
+        const add = (key, title, subtitle, entry) => {
+          if (!groups.has(key)) groups.set(key, { key, title, subtitle, entries: [] });
+          groups.get(key).entries.push(entry);
+        };
+        entries.forEach(l => {
+          if (!l.tags.length) return add('_untagged', 'No techniques tagged', null, l);
+          const keys = mode === 'category' ? categoriesOf(l) : l.tags;
+          keys.forEach(k => add(k, k, mode === 'technique' ? DEFINITIONS[k] || null : null, l));
+        });
+        const order = mode === 'category' ? [...Object.keys(taxonomy), 'Other'] : Object.values(taxonomy).flat();
+        const rank = (key) => key === '_untagged' ? Infinity : (order.includes(key) ? order.indexOf(key) : order.length);
+        return [...groups.values()].sort((a, b) => rank(a.key) - rank(b.key) || a.title.localeCompare(b.title));
+      };
+      const previewGroups = buildGroups(sortedLogs);
+      const printGroups = buildGroups(includedLogs);
+
+      const requirePrintable = () => {
+        if (!requireLogs()) return false;
+        if (includedLogs.length) return true;
+        showToast('No entries are selected — tick at least one in the preview.', { tone: 'warn' });
+        return false;
+      };
+
+      // Pastes the same organized layout as the printed page
       const copyForDocs = () => {
-        if (!requireLogs()) return;
-        const rows = sortedLogs.map(l =>
-          `<tr><td><b>${formatTime(l.timestamp)}</b></td><td>${htmlEsc(l.tags.join(', '))}</td><td>${htmlText(l.notes)}</td><td>${htmlText(l.effect)}</td></tr>`
-        ).join('');
+        if (!requirePrintable()) return;
+        const head = `<tr><th>Time</th>${printShow.tags ? '<th>Techniques</th>' : ''}<th>What happens on screen</th>${printShow.effect ? '<th>Effect / why it matters</th>' : ''}</tr>`;
         const html = `<h2>Film Analysis: ${htmlEsc(filmLabel)}</h2>${metaLine ? `<p>${htmlEsc(metaLine)}</p>` : ''}` +
-          `<table border="1" cellpadding="6" style="border-collapse:collapse"><thead><tr><th>Time</th><th>Techniques</th><th>What happens on screen</th><th>Effect / why it matters</th></tr></thead><tbody>${rows}</tbody></table>`;
-        const text = `Film Analysis: ${filmLabel}\n${metaLine}\n\n` + sortedLogs.map(l =>
-          `[${formatTime(l.timestamp)}] ${l.tags.join(', ')}\n${l.notes}${l.effect ? `\nEffect: ${l.effect}` : ''}`
+          printGroups.map(g => {
+            const rows = g.entries.map(l =>
+              `<tr><td><b>${formatTime(l.timestamp)}</b></td>${printShow.tags ? `<td>${htmlEsc(l.tags.join(', '))}</td>` : ''}<td>${htmlText(l.notes)}</td>${printShow.effect ? `<td>${htmlText(l.effect)}</td>` : ''}</tr>`
+            ).join('');
+            return (g.title ? `<h3>${htmlEsc(g.title)}</h3>` : '') + (g.subtitle ? `<p><i>${htmlEsc(g.subtitle)}</i></p>` : '') +
+              `<table border="1" cellpadding="6" style="border-collapse:collapse"><thead>${head}</thead><tbody>${rows}</tbody></table>`;
+          }).join('');
+        const text = `Film Analysis: ${filmLabel}\n${metaLine}\n\n` + printGroups.map(g =>
+          (g.title ? `== ${g.title} ==\n` : '') + g.entries.map(l =>
+            `[${formatTime(l.timestamp)}]${printShow.tags && l.tags.length ? ` ${l.tags.join(', ')}` : ''}\n${l.notes}${printShow.effect && l.effect ? `\nEffect: ${l.effect}` : ''}`
+          ).join('\n\n')
         ).join('\n\n');
         const write = window.ClipboardItem
           ? navigator.clipboard.write([new ClipboardItem({
@@ -933,7 +1046,7 @@
       };
 
       const printReport = () => {
-        if (requireLogs()) window.print();
+        if (requirePrintable()) window.print();
       };
 
       const saveProject = () => {
@@ -952,6 +1065,7 @@
           if (logs.length && !window.confirm('Replace your current entries with the ones in this file?')) return;
           setMeta(m => ({ ...m, ...data.meta }));
           setLogs(data.logs.map(normalizeLog));
+          setPrintExcluded([]);
           if (data.taxonomy && typeof data.taxonomy === 'object') setTaxonomy(data.taxonomy);
           resetForm();
           showToast(`Opened ${file.name}`);
@@ -961,6 +1075,7 @@
       const startNewAnalysis = () => {
         if (logs.length && !window.confirm(`Start a new analysis? This clears all ${logs.length} entries. (Save a project file first if you want to keep them.)`)) return;
         setLogs([]);
+        setPrintExcluded([]);
         setMeta(m => ({ ...m, filmTitle: '', director: '' }));
         resetForm();
         swReset();
@@ -1032,7 +1147,7 @@
               <nav className="flex flex-wrap items-center bg-cinema-950 p-1 rounded-xl border border-slate-800">
                 <NavTab active={activeTab === 'logger'} onClick={() => setActiveTab('logger')} icon="fa-solid fa-stopwatch">Analysis Room</NavTab>
                 <NavTab active={activeTab === 'techniques'} onClick={() => setActiveTab('techniques')} icon="fa-solid fa-tags">Techniques & Glossary</NavTab>
-                <NavTab active={activeTab === 'export'} onClick={() => setActiveTab('export')} icon="fa-solid fa-file-export">Export ({logs.length})</NavTab>
+                <NavTab active={activeTab === 'export'} onClick={() => setActiveTab('export')} icon="fa-solid fa-print">Print & Export ({logs.length})</NavTab>
               </nav>
 
               <button
@@ -1063,7 +1178,7 @@
 
           {storageWarning && (
             <div className="bg-rose-500/10 border-b border-rose-500/30 text-rose-200 text-xs px-4 py-2 text-center">
-              This browser's storage is full, so new screenshots won't survive a refresh. Use <b>Export → Save project file</b> to keep everything.
+              This browser's storage is full, so new screenshots won't survive a refresh. Use <b>Print &amp; Export → Save project file</b> to keep everything.
             </div>
           )}
 
@@ -1675,52 +1790,89 @@
             {/* VIEW 3: EXPORT */}
             {activeTab === 'export' && (
               <div className="space-y-6">
-                <div className="bg-cinema-900 rounded-2xl border border-slate-800 p-6 shadow-xl space-y-6">
+                <div className="bg-cinema-900 rounded-2xl border border-slate-800 p-6 shadow-xl space-y-5">
                   <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-800 pb-4">
                     <div>
                       <h2 className="text-base font-bold text-slate-100 flex items-center gap-2">
-                        <i className="fa-solid fa-file-export text-amber-400"></i>
-                        Export Your Analysis
+                        <i className="fa-solid fa-print text-amber-400"></i>
+                        Organize & Print
                       </h2>
-                      <p className="text-xs text-slate-400">Paste it into a Google Doc, print it or save it as a PDF, or download a spreadsheet.</p>
+                      <p className="text-xs text-slate-400 max-w-xl">Choose how to group your notes and which entries to include. The page below is exactly what prints, and what Copy for Google Docs pastes.</p>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      <ExportButton onClick={copyForDocs} icon="fa-solid fa-copy" primary>Copy for Google Docs</ExportButton>
-                      <ExportButton onClick={printReport} icon="fa-solid fa-print">Print / Save PDF</ExportButton>
-                      <ExportButton onClick={exportCSV} icon="fa-solid fa-file-csv">Download CSV</ExportButton>
-                      <ExportButton onClick={exportMarkdown} icon="fa-brands fa-markdown">Copy Markdown</ExportButton>
+                      <ExportButton onClick={printReport} icon="fa-solid fa-print" primary>Print / Save PDF</ExportButton>
+                      <ExportButton onClick={copyForDocs} icon="fa-solid fa-copy">Copy for Google Docs</ExportButton>
                     </div>
                   </div>
 
-                  <label className="flex items-center gap-2 text-[11px] text-slate-400 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={settings.printShots}
-                      onChange={(e) => setSettings(s => ({ ...s, printShots: e.target.checked }))}
-                      className="accent-amber-500"
-                    />
-                    Include frame screenshots when printing
-                  </label>
-
-                  <div className="bg-cinema-950 rounded-xl border border-slate-800 p-6 space-y-4 font-mono text-xs text-slate-300">
-                    <div className="border-b border-slate-800 pb-3">
-                      <h3 className="text-sm font-bold text-amber-400">{filmLabel}</h3>
-                      {metaLine && <p className="text-slate-400">{metaLine}</p>}
-                    </div>
-                    {sortedLogs.length === 0 ? (
-                      <p className="text-slate-500 font-sans">No entries yet.</p>
-                    ) : (
-                      <div className="space-y-3">
-                        {sortedLogs.map(log => (
-                          <div key={log.id} className="border-b border-slate-800/60 pb-2">
-                            <span className="text-amber-400 font-bold">[{formatTime(log.timestamp)}]</span>{' '}
-                            <span className="text-slate-400">{log.tags.length > 0 && `(${log.tags.join(', ')})`}</span>
-                            {log.notes && <p className="font-sans text-slate-200 mt-1 whitespace-pre-line">{log.notes}</p>}
-                            {log.effect && <p className="font-sans text-slate-400 mt-1 whitespace-pre-line"><span className="text-amber-400/80">Effect:</span> {log.effect}</p>}
-                          </div>
+                  <div className="flex flex-wrap items-center gap-x-8 gap-y-3 text-xs">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-slate-400 font-medium">Organize by:</span>
+                      <div className="flex bg-cinema-950 p-1 rounded-xl border border-slate-800">
+                        {PRINT_GROUPINGS.map(g => (
+                          <button
+                            key={g.id}
+                            onClick={() => setSettings(s => ({ ...s, printGroup: g.id }))}
+                            aria-pressed={settings.printGroup === g.id}
+                            className={`px-3 py-1.5 rounded-lg font-semibold transition ${
+                              settings.printGroup === g.id ? 'bg-amber-500 text-slate-950' : 'text-slate-400 hover:text-slate-200'
+                            }`}
+                          >
+                            {g.label}
+                          </button>
                         ))}
                       </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-3 text-slate-400">
+                      <span className="font-medium">Show:</span>
+                      {[['printTags', 'Techniques'], ['printEffect', 'Effect'], ['printShots', 'Screenshots']].map(([key, label]) => (
+                        <label key={key} className="flex items-center gap-1.5 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={settings[key]}
+                            onChange={(e) => setSettings(s => ({ ...s, [key]: e.target.checked }))}
+                            className="accent-amber-500"
+                          />
+                          {label}
+                        </label>
+                      ))}
+                    </div>
+
+                    {logs.length > 0 && (
+                      <div className="flex items-center gap-2 text-slate-400">
+                        <span><b className="text-slate-200">{includedLogs.length}</b> of {logs.length} entries included</span>
+                        <button onClick={() => setPrintExcluded([])} className="text-amber-400 hover:underline">All</button>
+                        <span className="text-slate-600">·</span>
+                        <button onClick={() => setPrintExcluded(logs.map(l => l.id))} className="text-amber-400 hover:underline">None</button>
+                      </div>
                     )}
+                  </div>
+
+                  {settings.printGroup !== 'time' && logs.length > 0 && (
+                    <p className="text-[11px] text-slate-500 -mt-2">
+                      An entry tagged with more than one {settings.printGroup === 'category' ? 'category' : 'technique'} appears under each. Unticking it leaves it out everywhere.
+                    </p>
+                  )}
+
+                  <div className="bg-white rounded-xl p-6 md:p-10 overflow-x-auto shadow-inner">
+                    {logs.length === 0 ? (
+                      <p className="text-slate-500 text-sm">No entries yet — log a few moments in the Analysis Room and they'll appear here.</p>
+                    ) : (
+                      <Report title={filmLabel} metaLine={metaLine} groups={previewGroups} show={printShow} excluded={excludedSet} onToggle={toggleExcluded} />
+                    )}
+                  </div>
+                </div>
+
+                <div className="bg-cinema-900 rounded-2xl border border-slate-800 p-6 shadow-xl space-y-3">
+                  <h2 className="text-sm font-bold text-slate-100 flex items-center gap-2">
+                    <i className="fa-solid fa-table text-amber-400"></i>
+                    Spreadsheet & Other Formats
+                  </h2>
+                  <p className="text-xs text-slate-400 max-w-2xl">Every entry in film order, regardless of the layout above. Good for sorting in Google Sheets.</p>
+                  <div className="flex flex-wrap gap-2">
+                    <ExportButton onClick={exportCSV} icon="fa-solid fa-file-csv">Download CSV</ExportButton>
+                    <ExportButton onClick={exportMarkdown} icon="fa-brands fa-markdown">Copy Markdown</ExportButton>
                   </div>
                 </div>
 
@@ -1811,34 +1963,7 @@
 
         {/* PRINT REPORT — only visible when printing */}
         <div id="print-report" className="print-only">
-          <h1>Film Analysis: {filmLabel}</h1>
-          <p className="meta">{[metaLine, new Date().toLocaleDateString()].filter(Boolean).join(' | ')}</p>
-          <table>
-            <thead>
-              <tr>
-                <th style={{ width: '1%' }}>Time</th>
-                <th style={{ width: '22%' }}>Techniques</th>
-                <th>Observation</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sortedLogs.map(l => (
-                <tr key={l.id}>
-                  <td className="time">{formatTime(l.timestamp)}</td>
-                  <td>{l.tags.join(', ')}</td>
-                  <td>
-                    {settings.printShots && l.screenshot && <img src={l.screenshot} alt="" />}
-                    {l.notes && <div style={{ whiteSpace: 'pre-line' }}>{l.notes}</div>}
-                    {l.effect && (
-                      <div style={{ marginTop: '4pt', whiteSpace: 'pre-line' }}>
-                        <span className="label">Effect: </span>{l.effect}
-                      </div>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <Report title={filmLabel} metaLine={metaLine} groups={printGroups} show={printShow} excluded={NO_EXCLUSIONS} />
         </div>
         </>
       );
