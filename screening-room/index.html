@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>CineMark – Film Analysis & Timestamp Logger</title>
+  <title>The Screening Room – Film Analysis & Timestamp Logger</title>
   <!-- CDN versions are pinned so an upstream release can't silently break the page -->
   <script src="https://cdn.tailwindcss.com/3.4.16"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
@@ -16,14 +16,18 @@
       theme: {
         extend: {
           colors: {
-            cinema: {
-              950: '#0a0d14',
-              900: '#111726',
-              800: '#1a2235',
-              700: '#28344d',
-              600: '#3a4a6b',
-              gold: '#f59e0b',
-              amber: '#d97706'
+            dusk: {
+              950: '#15181F',
+              900: '#1E222B',
+              800: '#2A2F3A',
+              700: '#363C49',
+              600: '#454C5B'
+            },
+            accent: {
+              200: '#BFE3DC',
+              300: '#9ED3C9',
+              400: '#5FB3A6',
+              500: '#4A9D90'
             }
           }
         }
@@ -32,14 +36,14 @@
   </script>
   <style>
     body {
-      background-color: #0a0d14;
+      background-color: #15181F;
       font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
     }
     /* Custom scrollbar for taxonomy and logs */
     ::-webkit-scrollbar { width: 6px; height: 6px; }
-    ::-webkit-scrollbar-track { background: #111726; }
-    ::-webkit-scrollbar-thumb { background: #28344d; border-radius: 4px; }
-    ::-webkit-scrollbar-thumb:hover { background: #3a4a6b; }
+    ::-webkit-scrollbar-track { background: #1E222B; }
+    ::-webkit-scrollbar-thumb { background: #363C49; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #454C5B; }
 
     /* The YouTube API swaps our placeholder div for an iframe; make it fill the frame */
     .yt-host iframe { width: 100%; height: 100%; border: 0; }
@@ -66,11 +70,11 @@
     .report .time { font-family: ui-monospace, Menlo, monospace; white-space: nowrap; font-weight: bold; }
     .report .label { font-size: 8pt; text-transform: uppercase; letter-spacing: 0.05em; color: #666; }
     .report .pick { width: 1%; text-align: center; }
-    .report .pick input { width: 15px; height: 15px; accent-color: #d97706; cursor: pointer; }
+    .report .pick input { width: 15px; height: 15px; accent-color: #4A9D90; cursor: pointer; }
     .report tr.excluded td:not(.pick) { opacity: 0.3; }
   </style>
 </head>
-<body class="text-slate-100 min-h-screen flex flex-col antialiased selection:bg-amber-500 selection:text-slate-950">
+<body class="text-slate-100 min-h-screen flex flex-col antialiased selection:bg-accent-500 selection:text-slate-950">
 
   <div id="root"></div>
 
@@ -78,7 +82,7 @@
   <script type="text/babel" data-presets="react">
     const { useState, useEffect, useRef, useMemo } = React;
 
-    const STORAGE_KEY = 'cinemark.v3';
+    const STORAGE_KEY = 'screening-room.v3';
     const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
     const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform);
     const MOD_KEY = IS_MAC ? '⌘' : 'Ctrl';
@@ -309,9 +313,9 @@
             onChange={(e) => setValue(e.target.value)}
             placeholder={placeholder}
             aria-label={placeholder}
-            className="flex-1 min-w-0 bg-cinema-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-500"
+            className="flex-1 min-w-0 bg-dusk-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-accent-500"
           />
-          <button type="submit" className="px-3 py-1.5 bg-cinema-700 hover:bg-cinema-600 text-slate-200 rounded-lg text-xs font-semibold whitespace-nowrap">
+          <button type="submit" className="px-3 py-1.5 bg-dusk-700 hover:bg-dusk-600 text-slate-200 rounded-lg text-xs font-semibold whitespace-nowrap">
             <i className="fa-solid fa-plus mr-1"></i>{buttonLabel}
           </button>
         </form>
@@ -327,7 +331,7 @@
             value={value}
             placeholder={placeholder}
             onChange={(e) => onChange(e.target.value)}
-            className={`bg-cinema-800 border border-slate-700 rounded px-2.5 py-1 text-slate-200 font-semibold placeholder-slate-600 placeholder:font-normal focus:outline-none focus:border-amber-500 ${width}`}
+            className={`bg-dusk-800 border border-slate-700 rounded px-2.5 py-1 text-slate-200 font-semibold placeholder-slate-600 placeholder:font-normal focus:outline-none focus:border-accent-500 ${width}`}
           />
         </label>
       );
@@ -339,7 +343,7 @@
           onClick={onClick}
           aria-current={active ? 'page' : undefined}
           className={`px-4 py-2 rounded-lg font-semibold text-xs transition flex items-center gap-2 ${
-            active ? 'bg-amber-500 text-slate-950 shadow' : 'text-slate-400 hover:text-slate-200'
+            active ? 'bg-accent-500 text-slate-950 shadow' : 'text-slate-400 hover:text-slate-200'
           }`}
         >
           <i className={icon}></i>
@@ -353,7 +357,7 @@
         <button
           onClick={onClick}
           className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition ${
-            primary ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow' : 'bg-cinema-800 hover:bg-cinema-700 text-slate-200 border border-slate-700'
+            primary ? 'bg-accent-500 hover:bg-accent-400 text-slate-950 shadow' : 'bg-dusk-800 hover:bg-dusk-700 text-slate-200 border border-slate-700'
           }`}
         >
           <i className={icon}></i>
@@ -1191,8 +1195,8 @@
       };
 
       const saveProject = () => {
-        const data = { app: 'CineMark', version: 3, savedAt: new Date().toISOString(), meta, logs, taxonomy };
-        downloadFile(`${baseName}.cinemark.json`, JSON.stringify(data, null, 2), 'application/json');
+        const data = { app: 'The Screening Room', version: 3, savedAt: new Date().toISOString(), meta, logs, taxonomy };
+        downloadFile(`${baseName}.screening-room.json`, JSON.stringify(data, null, 2), 'application/json');
         showToast('Project file saved');
       };
 
@@ -1210,7 +1214,7 @@
           if (data.taxonomy && typeof data.taxonomy === 'object') setTaxonomy(data.taxonomy);
           resetForm();
           showToast(`Opened ${file.name}`);
-        }).catch(() => showToast("That file isn't a CineMark project.", { tone: 'warn' }));
+        }).catch(() => showToast("That file isn't a Screening Room project.", { tone: 'warn' }));
       };
 
       const startNewAnalysis = () => {
@@ -1269,23 +1273,23 @@
         <div className="flex flex-col min-h-screen no-print">
 
           {/* TOP HEADER & NAVBAR */}
-          <header className="bg-cinema-900 border-b border-slate-800 sticky top-0 z-40 shadow-lg">
+          <header className="bg-dusk-900 border-b border-slate-800 sticky top-0 z-40 shadow-lg">
             <div className="max-w-7xl w-full mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-4">
 
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-500 to-amber-400 flex items-center justify-center text-slate-950 font-black text-xl shadow-md">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-accent-500 to-accent-400 flex items-center justify-center text-slate-950 font-black text-xl shadow-md">
                   <i className="fa-solid fa-film"></i>
                 </div>
                 <div>
                   <h1 className="font-bold text-lg text-slate-100 flex items-center gap-2">
-                    CineMark
-                    <span className="text-xs bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded-full font-mono border border-amber-500/30">v3</span>
+                    The Screening Room
+                    <span className="text-xs bg-accent-500/20 text-accent-400 px-2 py-0.5 rounded-full font-mono border border-accent-500/30">v3</span>
                   </h1>
                   <p className="text-xs text-slate-400">Film Analysis & Timestamp Logging Tool</p>
                 </div>
               </div>
 
-              <nav className="flex flex-wrap items-center bg-cinema-950 p-1 rounded-xl border border-slate-800">
+              <nav className="flex flex-wrap items-center bg-dusk-950 p-1 rounded-xl border border-slate-800">
                 <NavTab active={activeTab === 'logger'} onClick={() => setActiveTab('logger')} icon="fa-solid fa-stopwatch">Analysis Room</NavTab>
                 <NavTab active={activeTab === 'techniques'} onClick={() => setActiveTab('techniques')} icon="fa-solid fa-tags">Techniques & Glossary</NavTab>
                 <NavTab active={activeTab === 'export'} onClick={() => setActiveTab('export')} icon="fa-solid fa-print">Print & Export ({logs.length})</NavTab>
@@ -1293,15 +1297,15 @@
 
               <button
                 onClick={() => setShowShortcutsModal(true)}
-                className="px-3 py-2 bg-cinema-800 hover:bg-cinema-700 text-slate-300 rounded-xl text-xs font-medium border border-slate-700 flex items-center gap-2 transition"
+                className="px-3 py-2 bg-dusk-800 hover:bg-dusk-700 text-slate-300 rounded-xl text-xs font-medium border border-slate-700 flex items-center gap-2 transition"
               >
-                <i className="fa-solid fa-keyboard text-amber-400"></i>
+                <i className="fa-solid fa-keyboard text-accent-400"></i>
                 <span className="hidden sm:inline">Shortcuts</span>
               </button>
             </div>
 
             {/* FILM METADATA BAR */}
-            <div className="bg-cinema-950/80 border-t border-slate-800/80 px-4 py-2">
+            <div className="bg-dusk-950/80 border-t border-slate-800/80 px-4 py-2">
               <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3 text-xs">
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
                   <MetaField label="Film:" value={meta.filmTitle} onChange={updateMeta('filmTitle')} placeholder="e.g. Citizen Kane" width="w-44" />
@@ -1332,10 +1336,10 @@
 
                   {/* LEFT: PLAYER */}
                   <div className="md:col-span-7 space-y-4" ref={playerCardRef}>
-                    <div className="bg-cinema-900 rounded-2xl border border-slate-800 overflow-hidden shadow-xl">
+                    <div className="bg-dusk-900 rounded-2xl border border-slate-800 overflow-hidden shadow-xl">
 
                       {/* Source selector */}
-                      <div className="bg-cinema-950 p-2 border-b border-slate-800 flex flex-wrap items-center gap-2 text-xs">
+                      <div className="bg-dusk-950 p-2 border-b border-slate-800 flex flex-wrap items-center gap-2 text-xs">
                         <span className="text-slate-400 font-medium px-2">Source:</span>
                         {SOURCES.map(src => (
                           <button
@@ -1343,7 +1347,7 @@
                             onClick={() => switchSource(src.id)}
                             aria-pressed={sourceMode === src.id}
                             className={`px-3 py-1.5 rounded-lg font-medium transition flex items-center gap-1.5 whitespace-nowrap ${
-                              sourceMode === src.id ? 'bg-amber-500 text-slate-950 font-bold' : 'bg-cinema-800 text-slate-300 hover:bg-cinema-700'
+                              sourceMode === src.id ? 'bg-accent-500 text-slate-950 font-bold' : 'bg-dusk-800 text-slate-300 hover:bg-dusk-700'
                             }`}
                           >
                             <i className={src.icon}></i>
@@ -1352,13 +1356,13 @@
                         ))}
                         <div className="ml-auto pl-2">
                           {sourceMode === 'local' && localVideoSrc && (
-                            <button onClick={() => fileInputRef.current.click()} className="text-slate-400 hover:text-amber-400 whitespace-nowrap">Change video</button>
+                            <button onClick={() => fileInputRef.current.click()} className="text-slate-400 hover:text-accent-400 whitespace-nowrap">Change video</button>
                           )}
                           {sourceMode === 'youtube' && youtubeId && (
-                            <button onClick={() => setYoutubeId('')} className="text-slate-400 hover:text-amber-400 whitespace-nowrap">Change link</button>
+                            <button onClick={() => setYoutubeId('')} className="text-slate-400 hover:text-accent-400 whitespace-nowrap">Change link</button>
                           )}
                           {sourceMode === 'gdrive' && gdriveId && (
-                            <button onClick={() => setGdriveId('')} className="text-slate-400 hover:text-amber-400 whitespace-nowrap">Change link</button>
+                            <button onClick={() => setGdriveId('')} className="text-slate-400 hover:text-accent-400 whitespace-nowrap">Change link</button>
                           )}
                         </div>
                       </div>
@@ -1396,20 +1400,20 @@
                             />
                           ) : (
                             <div className="text-center p-6 space-y-3">
-                              <div className="w-16 h-16 rounded-full bg-cinema-800 text-amber-400 flex items-center justify-center mx-auto text-2xl border border-slate-700">
+                              <div className="w-16 h-16 rounded-full bg-dusk-800 text-accent-400 flex items-center justify-center mx-auto text-2xl border border-slate-700">
                                 <i className="fa-solid fa-photo-film"></i>
                               </div>
                               <h3 className="font-bold text-slate-200 text-sm">No Video Selected</h3>
                               {localFileName ? (
                                 <p className="text-xs text-slate-300 max-w-xs mx-auto">
-                                  Re-select <b className="text-amber-400">{localFileName}</b> to keep working — your notes are saved.
+                                  Re-select <b className="text-accent-400">{localFileName}</b> to keep working — your notes are saved.
                                 </p>
                               ) : (
                                 <p className="text-xs text-slate-400 max-w-xs mx-auto">Open an MP4, WebM, or MOV file. Each entry automatically saves a still of the frame.</p>
                               )}
                               <button
                                 onClick={() => fileInputRef.current.click()}
-                                className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl transition shadow"
+                                className="px-4 py-2 bg-accent-500 hover:bg-accent-400 text-slate-950 font-bold text-xs rounded-xl transition shadow"
                               >
                                 Select Video File
                               </button>
@@ -1423,7 +1427,7 @@
                           {youtubeId && ytError != null && (
                             <div className="absolute inset-0 bg-black/90 flex items-center justify-center p-6 text-center">
                               <div className="space-y-2 max-w-sm">
-                                <i className="fa-solid fa-triangle-exclamation text-amber-400 text-2xl"></i>
+                                <i className="fa-solid fa-triangle-exclamation text-accent-400 text-2xl"></i>
                                 <p className="text-sm text-slate-200">{ytErrorMessage(ytError)}</p>
                                 {isFileUrl && <p className="text-xs text-slate-400">YouTube often blocks videos on pages opened straight from a computer's files. Try hosting this page online, or download the clip and use Local Video.</p>}
                               </div>
@@ -1440,9 +1444,9 @@
                                   value={youtubeUrl}
                                   onChange={(e) => setYoutubeUrl(e.target.value)}
                                   aria-label="YouTube link"
-                                  className="flex-1 bg-cinema-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-amber-500"
+                                  className="flex-1 bg-dusk-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-accent-500"
                                 />
-                                <button type="submit" className="px-4 py-2 bg-amber-500 text-slate-950 font-bold text-xs rounded-xl hover:bg-amber-400">Load</button>
+                                <button type="submit" className="px-4 py-2 bg-accent-500 text-slate-950 font-bold text-xs rounded-xl hover:bg-accent-400">Load</button>
                               </div>
                               {isFileUrl && (
                                 <p className="text-[11px] text-slate-500">Heads up: YouTube may refuse to play on a page opened from your computer's files. It works when the page is hosted online.</p>
@@ -1474,9 +1478,9 @@
                                   value={gdriveUrl}
                                   onChange={(e) => setGdriveUrl(e.target.value)}
                                   aria-label="Google Drive link"
-                                  className="flex-1 bg-cinema-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-amber-500"
+                                  className="flex-1 bg-dusk-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-accent-500"
                                 />
-                                <button type="submit" className="px-4 py-2 bg-amber-500 text-slate-950 font-bold text-xs rounded-xl hover:bg-amber-400">Load</button>
+                                <button type="submit" className="px-4 py-2 bg-accent-500 text-slate-950 font-bold text-xs rounded-xl hover:bg-accent-400">Load</button>
                               </div>
                             </form>
                           )}
@@ -1486,7 +1490,7 @@
                         <div className={panelClass('stopwatch')}>
                           <div className="text-center p-6 space-y-4">
                             <p className="text-[11px] text-slate-400 max-w-xs mx-auto">For a film playing somewhere else (on the projector, a DVD, another device). Start the clock when the film starts.</p>
-                            <div className="font-mono text-5xl md:text-6xl font-bold text-amber-400 tracking-wider bg-cinema-950 border border-slate-800 px-6 py-4 rounded-2xl shadow-inner">
+                            <div className="font-mono text-5xl md:text-6xl font-bold text-accent-400 tracking-wider bg-dusk-950 border border-slate-800 px-6 py-4 rounded-2xl shadow-inner">
                               {formatTime(swSeconds)}
                             </div>
                             <div className="flex justify-center flex-wrap gap-2">
@@ -1499,9 +1503,9 @@
                                 <i className={`fa-solid ${swRunning ? 'fa-pause' : 'fa-play'}`}></i>
                                 <span>{swRunning ? 'Pause' : 'Start'}</span>
                               </button>
-                              <button onClick={() => swNudge(-1)} className="px-3 py-2 bg-cinema-800 hover:bg-cinema-700 text-slate-300 rounded-xl text-xs font-mono border border-slate-700">-1s</button>
-                              <button onClick={() => swNudge(1)} className="px-3 py-2 bg-cinema-800 hover:bg-cinema-700 text-slate-300 rounded-xl text-xs font-mono border border-slate-700">+1s</button>
-                              <button onClick={swReset} className="px-4 py-2 bg-cinema-800 hover:bg-cinema-700 text-slate-300 rounded-xl text-xs font-medium border border-slate-700">Reset</button>
+                              <button onClick={() => swNudge(-1)} className="px-3 py-2 bg-dusk-800 hover:bg-dusk-700 text-slate-300 rounded-xl text-xs font-mono border border-slate-700">-1s</button>
+                              <button onClick={() => swNudge(1)} className="px-3 py-2 bg-dusk-800 hover:bg-dusk-700 text-slate-300 rounded-xl text-xs font-mono border border-slate-700">+1s</button>
+                              <button onClick={swReset} className="px-4 py-2 bg-dusk-800 hover:bg-dusk-700 text-slate-300 rounded-xl text-xs font-medium border border-slate-700">Reset</button>
                             </div>
                           </div>
                         </div>
@@ -1509,24 +1513,24 @@
 
                       {/* PLAYER CONTROLS (local video + YouTube) */}
                       {canControlPlayer && (
-                        <div className="p-3 bg-cinema-950 border-t border-slate-800 space-y-3">
+                        <div className="p-3 bg-dusk-950 border-t border-slate-800 space-y-3">
                           {duration > 0 && (
                             <div
-                              className="relative h-2.5 bg-cinema-800 rounded-full cursor-pointer"
+                              className="relative h-2.5 bg-dusk-800 rounded-full cursor-pointer"
                               title="Click to jump; dots are your logged moments"
                               onClick={(e) => {
                                 const r = e.currentTarget.getBoundingClientRect();
                                 seekTo(((e.clientX - r.left) / r.width) * duration);
                               }}
                             >
-                              <div className="absolute inset-y-0 left-0 bg-amber-500/40 rounded-full pointer-events-none" style={{ width: `${Math.min(100, (currentTime / duration) * 100)}%` }}></div>
+                              <div className="absolute inset-y-0 left-0 bg-accent-500/40 rounded-full pointer-events-none" style={{ width: `${Math.min(100, (currentTime / duration) * 100)}%` }}></div>
                               {sortedLogs.map(l => (
                                 <button
                                   key={l.id}
                                   title={`${formatTime(l.timestamp)} ${l.tags.join(', ')}`}
                                   aria-label={`Jump to ${formatTime(l.timestamp)}`}
                                   onClick={(e) => { e.stopPropagation(); seekTo(l.timestamp); }}
-                                  className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3 h-3 rounded-full bg-amber-400 ring-2 ring-cinema-950 hover:scale-125 transition"
+                                  className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3 h-3 rounded-full bg-accent-400 ring-2 ring-dusk-950 hover:scale-125 transition"
                                   style={{ left: `${Math.min(100, (l.timestamp / duration) * 100)}%` }}
                                 ></button>
                               ))}
@@ -1534,13 +1538,13 @@
                           )}
                           <div className="flex flex-wrap items-center justify-between gap-3">
                             <div className="flex items-center gap-2">
-                              <button onClick={togglePlay} aria-label={isPlaying ? 'Pause' : 'Play'} className="w-9 h-9 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg flex items-center justify-center font-bold">
+                              <button onClick={togglePlay} aria-label={isPlaying ? 'Pause' : 'Play'} className="w-9 h-9 bg-accent-500 hover:bg-accent-400 text-slate-950 rounded-lg flex items-center justify-center font-bold">
                                 <i className={`fa-solid ${isPlaying ? 'fa-pause' : 'fa-play'}`}></i>
                               </button>
-                              <button onClick={() => seekBy(-1)} className="px-2.5 py-1.5 bg-cinema-800 hover:bg-cinema-700 text-slate-300 rounded-lg text-xs font-mono">-5s</button>
-                              <button onClick={() => seekBy(1)} className="px-2.5 py-1.5 bg-cinema-800 hover:bg-cinema-700 text-slate-300 rounded-lg text-xs font-mono">+5s</button>
+                              <button onClick={() => seekBy(-1)} className="px-2.5 py-1.5 bg-dusk-800 hover:bg-dusk-700 text-slate-300 rounded-lg text-xs font-mono">-5s</button>
+                              <button onClick={() => seekBy(1)} className="px-2.5 py-1.5 bg-dusk-800 hover:bg-dusk-700 text-slate-300 rounded-lg text-xs font-mono">+5s</button>
                             </div>
-                            <div className="font-mono text-amber-400 font-bold text-sm">
+                            <div className="font-mono text-accent-400 font-bold text-sm">
                               {formatTime(currentTime)} / {formatTime(duration)}
                             </div>
                             <div className="flex items-center gap-1 text-xs text-slate-400">
@@ -1551,7 +1555,7 @@
                                   onClick={() => handleSpeedChange(rate)}
                                   aria-pressed={playbackRate === rate}
                                   className={`px-1.5 py-1 rounded text-[11px] font-mono ${
-                                    playbackRate === rate ? 'bg-amber-500 text-slate-950 font-bold' : 'bg-cinema-800 hover:bg-cinema-700 text-slate-300'
+                                    playbackRate === rate ? 'bg-accent-500 text-slate-950 font-bold' : 'bg-dusk-800 hover:bg-dusk-700 text-slate-300'
                                   }`}
                                 >
                                   {rate}x
@@ -1564,11 +1568,11 @@
 
                       {/* DRIVE CLOCK — Drive's player can't report its time, so we keep a synced clock */}
                       {sourceMode === 'gdrive' && gdriveId && (
-                        <div className="p-3 bg-cinema-950 border-t border-slate-800 space-y-2">
+                        <div className="p-3 bg-dusk-950 border-t border-slate-800 space-y-2">
                           <p className="text-[11px] text-slate-400">
                             <i className="fa-solid fa-circle-info text-blue-400 mr-1"></i>
                             {settings.driveAutoClock
-                              ? <>Google Drive won't share the video's time, so CineMark keeps a clock. <b>Just press play in the video</b>: the clock starts and pauses with your clicks. If you drag Drive's slider, click the clock and type the new time.</>
+                              ? <>Google Drive won't share the video's time, so The Screening Room keeps a clock. <b>Just press play in the video</b>: the clock starts and pauses with your clicks. If you drag Drive's slider, click the clock and type the new time.</>
                               : <>Google Drive won't share the video's time with this page. Press <b>Start clock</b> when you press play, pause both together, and use ±1s to keep them matched.</>}
                           </p>
                           <div className="flex flex-wrap items-center gap-2">
@@ -1589,18 +1593,18 @@
                               onChange={(e) => setClockDraft(e.target.value)}
                               onBlur={commitClockDraft}
                               onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
-                              className="w-24 bg-transparent hover:bg-cinema-800 focus:bg-cinema-800 border border-transparent focus:border-amber-500 rounded-lg px-2 py-1 font-mono text-amber-400 font-bold text-sm focus:outline-none cursor-text"
+                              className="w-24 bg-transparent hover:bg-dusk-800 focus:bg-dusk-800 border border-transparent focus:border-accent-500 rounded-lg px-2 py-1 font-mono text-accent-400 font-bold text-sm focus:outline-none cursor-text"
                             />
-                            <button onClick={() => swNudge(-1)} className="px-2.5 py-1.5 bg-cinema-800 hover:bg-cinema-700 text-slate-300 rounded-lg text-xs font-mono">-1s</button>
-                            <button onClick={() => swNudge(1)} className="px-2.5 py-1.5 bg-cinema-800 hover:bg-cinema-700 text-slate-300 rounded-lg text-xs font-mono">+1s</button>
-                            <button onClick={swReset} className="px-2.5 py-1.5 bg-cinema-800 hover:bg-cinema-700 text-slate-300 rounded-lg text-xs">Reset</button>
+                            <button onClick={() => swNudge(-1)} className="px-2.5 py-1.5 bg-dusk-800 hover:bg-dusk-700 text-slate-300 rounded-lg text-xs font-mono">-1s</button>
+                            <button onClick={() => swNudge(1)} className="px-2.5 py-1.5 bg-dusk-800 hover:bg-dusk-700 text-slate-300 rounded-lg text-xs font-mono">+1s</button>
+                            <button onClick={swReset} className="px-2.5 py-1.5 bg-dusk-800 hover:bg-dusk-700 text-slate-300 rounded-lg text-xs">Reset</button>
                           </div>
                           <label className="flex items-center gap-2 text-[11px] text-slate-400 cursor-pointer select-none">
                             <input
                               type="checkbox"
                               checked={settings.driveAutoClock}
                               onChange={(e) => setSettings(s => ({ ...s, driveAutoClock: e.target.checked }))}
-                              className="accent-amber-500"
+                              className="accent-accent-500"
                             />
                             Start and pause the clock when I click play or pause in the video
                           </label>
@@ -1609,7 +1613,7 @@
 
                       {/* FRAME CAPTURE — YouTube/Drive stills need permission to capture this tab */}
                       {((sourceMode === 'youtube' && youtubeId) || (sourceMode === 'gdrive' && gdriveId)) && (
-                        <div className="px-3 py-2 bg-cinema-950 border-t border-slate-800 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                        <div className="px-3 py-2 bg-dusk-950 border-t border-slate-800 flex flex-wrap items-center justify-between gap-2 text-[11px]">
                           {frameCapture ? (
                             <>
                               <span className="text-emerald-400"><i className="fa-solid fa-camera mr-1.5"></i>Frame capture is on. New entries include a still of the video.</span>
@@ -1624,7 +1628,7 @@
                               <button
                                 onClick={startFrameCapture}
                                 title={'Chrome will ask to share this tab: pick "this tab". Nothing is recorded or sent anywhere.'}
-                                className="px-2.5 py-1 rounded-lg bg-cinema-800 hover:bg-cinema-700 text-amber-400 font-semibold whitespace-nowrap"
+                                className="px-2.5 py-1 rounded-lg bg-dusk-800 hover:bg-dusk-700 text-accent-400 font-semibold whitespace-nowrap"
                               >
                                 Turn on frame capture
                               </button>
@@ -1636,14 +1640,14 @@
                       )}
 
                       {/* MARK BAR */}
-                      <div className="bg-cinema-950/90 border-t border-slate-800 p-3 flex items-center justify-between gap-3">
+                      <div className="bg-dusk-950/90 border-t border-slate-800 p-3 flex items-center justify-between gap-3">
                         <div className="flex items-center gap-3">
                           <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Now:</span>
-                          <span className="font-mono text-xl font-bold text-amber-400">{formatTime(displaySeconds)}</span>
+                          <span className="font-mono text-xl font-bold text-accent-400">{formatTime(displaySeconds)}</span>
                         </div>
                         <button
                           onClick={quickMark}
-                          className="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-slate-950 rounded-xl font-bold text-xs flex items-center gap-2 shadow-lg shadow-amber-500/20 active:scale-95 transition"
+                          className="px-5 py-2.5 bg-gradient-to-r from-accent-500 to-accent-400 hover:from-accent-400 hover:to-accent-300 text-slate-950 rounded-xl font-bold text-xs flex items-center gap-2 shadow-lg shadow-accent-500/20 active:scale-95 transition"
                         >
                           <i className="fa-solid fa-bookmark"></i>
                           <span>MARK THIS MOMENT</span>
@@ -1655,11 +1659,11 @@
 
                   {/* RIGHT: OBSERVATION FORM */}
                   <div className="md:col-span-5" ref={formRef}>
-                    <div data-log-form className={`bg-cinema-900 rounded-2xl border p-5 shadow-xl flex flex-col gap-4 scroll-mt-40 ${editingLogId ? 'border-amber-500/60' : 'border-slate-800'}`}>
+                    <div data-log-form className={`bg-dusk-900 rounded-2xl border p-5 shadow-xl flex flex-col gap-4 scroll-mt-40 ${editingLogId ? 'border-accent-500/60' : 'border-slate-800'}`}>
 
                       <div className="flex items-center justify-between border-b border-slate-800 pb-3">
                         <h2 className="font-bold text-sm text-slate-200 flex items-center gap-2">
-                          <i className="fa-solid fa-pen-to-square text-amber-400"></i>
+                          <i className="fa-solid fa-pen-to-square text-accent-400"></i>
                           {editingLogId ? 'Editing Entry' : 'Record an Observation'}
                         </h2>
                         {(editingLogId || pinned || selectedTags.length > 0 || noteText || effectText) && (
@@ -1694,25 +1698,25 @@
                               onChange={(e) => setPinnedInput(e.target.value)}
                               onBlur={commitPinnedInput}
                               onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
-                              className={`w-24 bg-cinema-950 border rounded-lg px-2 py-1 font-mono text-sm font-bold focus:outline-none focus:border-amber-500 ${
-                                pinned ? 'border-amber-500/50 text-amber-400' : 'border-slate-700 text-slate-500'
+                              className={`w-24 bg-dusk-950 border rounded-lg px-2 py-1 font-mono text-sm font-bold focus:outline-none focus:border-accent-500 ${
+                                pinned ? 'border-accent-500/50 text-accent-400' : 'border-slate-700 text-slate-500'
                               }`}
                             />
                             <button
                               onClick={() => pinNow({ pause: false })}
                               title="Set the timestamp to the current playback time"
-                              className="text-[11px] text-slate-400 hover:text-amber-400 flex items-center gap-1"
+                              className="text-[11px] text-slate-400 hover:text-accent-400 flex items-center gap-1"
                             >
                               <i className="fa-solid fa-location-crosshairs"></i> Use current time
                             </button>
                           </div>
                           <p className="text-[10px] text-slate-500">
                             {pinned
-                              ? <span><i className="fa-solid fa-thumbtack mr-1 text-amber-400"></i>Locked in. Click the time to type a different one.</span>
+                              ? <span><i className="fa-solid fa-thumbtack mr-1 text-accent-400"></i>Locked in. Click the time to type a different one.</span>
                               : 'Locks in as soon as you pick a technique or start writing.'}
                           </p>
                           <p className="text-[10px] text-slate-500">
-                            <button onClick={() => imageInputRef.current.click()} className="text-slate-400 hover:text-amber-400">
+                            <button onClick={() => imageInputRef.current.click()} className="text-slate-400 hover:text-accent-400">
                               <i className="fa-solid fa-image mr-1"></i>{pinned && pinned.screenshot ? 'Replace image' : 'Add image'}
                             </button>
                             {' '}or paste a screenshot ({MOD_KEY}+V)
@@ -1728,7 +1732,7 @@
                             key={cat}
                             onClick={() => setSelectedCategoryTab(cat)}
                             className={`px-3 py-1.5 rounded-lg font-semibold whitespace-nowrap transition ${
-                              activeCategory === cat ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40' : 'text-slate-400 hover:text-slate-200 border border-transparent'
+                              activeCategory === cat ? 'bg-accent-500/20 text-accent-400 border border-accent-500/40' : 'text-slate-400 hover:text-slate-200 border border-transparent'
                             }`}
                           >
                             {cat}
@@ -1739,7 +1743,7 @@
                       {/* Technique pills */}
                       <div className="space-y-2">
                         <span className="text-[11px] text-slate-400 font-medium">Click the techniques you notice (hover for a definition):</span>
-                        <div className="flex flex-wrap gap-1.5 max-h-48 overflow-y-auto p-1.5 bg-cinema-950 rounded-xl border border-slate-800/80">
+                        <div className="flex flex-wrap gap-1.5 max-h-48 overflow-y-auto p-1.5 bg-dusk-950 rounded-xl border border-slate-800/80">
                           {(taxonomy[activeCategory] || []).map(tag => {
                             const isSelected = selectedTags.includes(tag);
                             return (
@@ -1751,8 +1755,8 @@
                                 aria-pressed={isSelected}
                                 className={`px-2.5 py-1 rounded-lg text-xs font-medium transition flex items-center gap-1.5 ${
                                   isSelected
-                                    ? 'bg-amber-500 text-slate-950 font-bold shadow'
-                                    : 'bg-cinema-800 text-slate-300 hover:bg-cinema-700 border border-slate-700'
+                                    ? 'bg-accent-500 text-slate-950 font-bold shadow'
+                                    : 'bg-dusk-800 text-slate-300 hover:bg-dusk-700 border border-slate-700'
                                 }`}
                               >
                                 {isSelected && <i className="fa-solid fa-check text-[10px]"></i>}
@@ -1772,9 +1776,9 @@
                           <span className="text-[10px] uppercase text-slate-400 font-bold tracking-wider">Selected ({selectedTags.length}):</span>
                           <div className="flex flex-wrap gap-1">
                             {selectedTags.map(tag => (
-                              <span key={tag} className="bg-amber-500/10 text-amber-400 border border-amber-500/30 text-[11px] pl-2 pr-1 py-0.5 rounded-md flex items-center gap-1">
+                              <span key={tag} className="bg-accent-500/10 text-accent-400 border border-accent-500/30 text-[11px] pl-2 pr-1 py-0.5 rounded-md flex items-center gap-1">
                                 {tag}
-                                <button onClick={() => removeSelectedTag(tag)} aria-label={`Remove ${tag}`} className="px-1 hover:text-amber-200">
+                                <button onClick={() => removeSelectedTag(tag)} aria-label={`Remove ${tag}`} className="px-1 hover:text-accent-200">
                                   <i className="fa-solid fa-xmark text-[10px]"></i>
                                 </button>
                               </span>
@@ -1794,7 +1798,7 @@
                           value={noteText}
                           onFocus={ensurePinned}
                           onChange={(e) => { ensurePinned(); setNoteText(e.target.value); }}
-                          className="w-full bg-cinema-950 border border-slate-700 rounded-xl p-3 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-500 transition resize-y"
+                          className="w-full bg-dusk-950 border border-slate-700 rounded-xl p-3 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-accent-500 transition resize-y"
                         ></textarea>
                       </div>
 
@@ -1810,7 +1814,7 @@
                           value={effectText}
                           onFocus={ensurePinned}
                           onChange={(e) => { ensurePinned(); setEffectText(e.target.value); }}
-                          className="w-full bg-cinema-950 border border-slate-700 rounded-xl p-3 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-500 transition resize-y"
+                          className="w-full bg-dusk-950 border border-slate-700 rounded-xl p-3 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-accent-500 transition resize-y"
                         ></textarea>
                       </div>
 
@@ -1819,7 +1823,7 @@
                           type="checkbox"
                           checked={settings.autoPause}
                           onChange={(e) => setSettings(s => ({ ...s, autoPause: e.target.checked }))}
-                          className="accent-amber-500"
+                          className="accent-accent-500"
                         />
                         Pause the video while I write an entry
                       </label>
@@ -1827,7 +1831,7 @@
                       <button
                         type="button"
                         onClick={handleSaveLog}
-                        className="w-full py-3 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl transition shadow-lg shadow-amber-500/20 flex items-center justify-center gap-2"
+                        className="w-full py-3 bg-accent-500 hover:bg-accent-400 text-slate-950 font-bold text-xs rounded-xl transition shadow-lg shadow-accent-500/20 flex items-center justify-center gap-2"
                       >
                         <i className="fa-solid fa-floppy-disk"></i>
                         {editingLogId ? 'Update Entry' : 'Save to Timeline'}
@@ -1838,12 +1842,12 @@
                 </div>
 
                 {/* TIMELINE */}
-                <div className="bg-cinema-900 rounded-2xl border border-slate-800 p-5 shadow-xl space-y-4">
+                <div className="bg-dusk-900 rounded-2xl border border-slate-800 p-5 shadow-xl space-y-4">
                   <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-4">
                     <div className="flex items-center gap-2">
-                      <i className="fa-solid fa-timeline text-amber-400 text-base"></i>
+                      <i className="fa-solid fa-timeline text-accent-400 text-base"></i>
                       <h2 className="font-bold text-sm text-slate-100">Observation Timeline</h2>
-                      <span className="text-xs text-slate-400 bg-cinema-950 px-2.5 py-0.5 rounded-full border border-slate-800">
+                      <span className="text-xs text-slate-400 bg-dusk-950 px-2.5 py-0.5 rounded-full border border-slate-800">
                         {filteredLogs.length === logs.length ? `${logs.length} entries` : `${filteredLogs.length} of ${logs.length}`}
                       </span>
                     </div>
@@ -1857,14 +1861,14 @@
                           aria-label="Search entries"
                           value={searchFilter}
                           onChange={(e) => setSearchFilter(e.target.value)}
-                          className="w-full bg-cinema-950 border border-slate-700 rounded-xl pl-8 pr-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-amber-500"
+                          className="w-full bg-dusk-950 border border-slate-700 rounded-xl pl-8 pr-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-accent-500"
                         />
                       </div>
                       <select
                         value={categoryFilter}
                         onChange={(e) => setCategoryFilter(e.target.value)}
                         aria-label="Filter by category"
-                        className="bg-cinema-950 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-amber-500"
+                        className="bg-dusk-950 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-accent-500"
                       >
                         <option value="All">All Categories</option>
                         {Object.keys(taxonomy).map(cat => <option key={cat} value={cat}>{cat}</option>)}
@@ -1878,7 +1882,7 @@
                       <i className="fa-solid fa-box-open text-3xl"></i>
                       {logs.length === 0 ? (
                         <p className="text-xs max-w-sm mx-auto">
-                          Nothing logged yet. When you notice a technique, press <kbd className="text-amber-400 font-mono">M</kbd> (or click a technique), describe it, then save.
+                          Nothing logged yet. When you notice a technique, press <kbd className="text-accent-400 font-mono">M</kbd> (or click a technique), describe it, then save.
                         </p>
                       ) : (
                         <p className="text-xs">No entries match that search.</p>
@@ -1889,22 +1893,22 @@
                       {filteredLogs.map(log => (
                         <div
                           key={log.id}
-                          className={`bg-cinema-950 rounded-xl border p-4 space-y-2 transition ${
-                            editingLogId === log.id ? 'border-amber-500/60' : 'border-slate-800 hover:border-slate-700'
+                          className={`bg-dusk-950 rounded-xl border p-4 space-y-2 transition ${
+                            editingLogId === log.id ? 'border-accent-500/60' : 'border-slate-800 hover:border-slate-700'
                           }`}
                         >
                           <div className="flex items-center justify-between border-b border-slate-800/80 pb-2 gap-2">
                             <button
                               onClick={() => jumpToLog(log)}
                               title="Play from this moment"
-                              className="font-mono text-sm font-bold text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 px-2.5 py-1 rounded-lg border border-amber-500/30 flex items-center gap-1.5 transition"
+                              className="font-mono text-sm font-bold text-accent-400 bg-accent-500/10 hover:bg-accent-500/20 px-2.5 py-1 rounded-lg border border-accent-500/30 flex items-center gap-1.5 transition"
                             >
                               <i className="fa-solid fa-play text-[10px]"></i>
                               <span>{formatTime(log.timestamp)}</span>
                             </button>
                             <span className="text-[10px] text-slate-500 truncate flex-1">{categoriesOf(log).join(' · ')}</span>
                             <div className="flex items-center gap-1">
-                              <button onClick={() => handleEditLog(log)} className="p-1.5 text-slate-400 hover:text-amber-400 transition" title="Edit entry" aria-label="Edit entry">
+                              <button onClick={() => handleEditLog(log)} className="p-1.5 text-slate-400 hover:text-accent-400 transition" title="Edit entry" aria-label="Edit entry">
                                 <i className="fa-solid fa-pen"></i>
                               </button>
                               <button onClick={() => handleDeleteLog(log)} className="p-1.5 text-slate-400 hover:text-rose-400 transition" title="Delete entry" aria-label="Delete entry">
@@ -1920,7 +1924,7 @@
                           {log.tags.length > 0 && (
                             <div className="flex flex-wrap gap-1">
                               {log.tags.map(tag => (
-                                <span key={tag} title={DEFINITIONS[tag] || ''} className="bg-cinema-800 text-slate-300 text-[10px] px-2 py-0.5 rounded border border-slate-700 font-medium">
+                                <span key={tag} title={DEFINITIONS[tag] || ''} className="bg-dusk-800 text-slate-300 text-[10px] px-2 py-0.5 rounded border border-slate-700 font-medium">
                                   {tag}
                                 </span>
                               ))}
@@ -1931,8 +1935,8 @@
                             <p className="text-xs text-slate-300 leading-relaxed whitespace-pre-line">{log.notes}</p>
                           )}
                           {log.effect && (
-                            <p className="text-xs text-slate-300 leading-relaxed bg-cinema-900/60 p-2.5 rounded-lg border border-slate-800/80 whitespace-pre-line">
-                              <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400/80 block mb-0.5">Effect</span>
+                            <p className="text-xs text-slate-300 leading-relaxed bg-dusk-900/60 p-2.5 rounded-lg border border-slate-800/80 whitespace-pre-line">
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-accent-400/80 block mb-0.5">Effect</span>
                               {log.effect}
                             </p>
                           )}
@@ -1946,18 +1950,18 @@
 
             {/* VIEW 2: TECHNIQUES & GLOSSARY */}
             {activeTab === 'techniques' && (
-              <div className="bg-cinema-900 rounded-2xl border border-slate-800 p-6 shadow-xl space-y-6">
+              <div className="bg-dusk-900 rounded-2xl border border-slate-800 p-6 shadow-xl space-y-6">
                 <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-800 pb-4">
                   <div>
                     <h2 className="text-base font-bold text-slate-100 flex items-center gap-2">
-                      <i className="fa-solid fa-tags text-amber-400"></i>
+                      <i className="fa-solid fa-tags text-accent-400"></i>
                       Techniques & Glossary
                     </h2>
                     <p className="text-xs text-slate-400">The techniques students can tag, with definitions. Add your own or remove ones you don't teach.</p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <div className="w-60"><AddInput placeholder="New category name" buttonLabel="Category" onAdd={addCategory} /></div>
-                    <button onClick={resetTaxonomy} className="px-3 py-1.5 text-xs text-slate-400 hover:text-amber-400 flex items-center gap-1.5">
+                    <button onClick={resetTaxonomy} className="px-3 py-1.5 text-xs text-slate-400 hover:text-accent-400 flex items-center gap-1.5">
                       <i className="fa-solid fa-rotate-left"></i> Reset to defaults
                     </button>
                   </div>
@@ -1965,9 +1969,9 @@
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {Object.keys(taxonomy).map(category => (
-                    <div key={category} className="bg-cinema-950 rounded-xl border border-slate-800 p-4 space-y-3 flex flex-col">
+                    <div key={category} className="bg-dusk-950 rounded-xl border border-slate-800 p-4 space-y-3 flex flex-col">
                       <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-                        <h3 className="font-bold text-xs text-amber-400 uppercase tracking-wider">{category}</h3>
+                        <h3 className="font-bold text-xs text-accent-400 uppercase tracking-wider">{category}</h3>
                         <button onClick={() => removeCategory(category)} className="text-slate-500 hover:text-rose-400 text-xs" title="Delete category" aria-label={`Delete ${category}`}>
                           <i className="fa-solid fa-trash-can"></i>
                         </button>
@@ -1999,11 +2003,11 @@
             {/* VIEW 3: EXPORT */}
             {activeTab === 'export' && (
               <div className="space-y-6">
-                <div className="bg-cinema-900 rounded-2xl border border-slate-800 p-6 shadow-xl space-y-5">
+                <div className="bg-dusk-900 rounded-2xl border border-slate-800 p-6 shadow-xl space-y-5">
                   <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-800 pb-4">
                     <div>
                       <h2 className="text-base font-bold text-slate-100 flex items-center gap-2">
-                        <i className="fa-solid fa-print text-amber-400"></i>
+                        <i className="fa-solid fa-print text-accent-400"></i>
                         Organize & Print
                       </h2>
                       <p className="text-xs text-slate-400 max-w-xl">Choose how to group your notes and which entries to include. The page below is exactly what prints, and what Copy for Google Docs pastes.</p>
@@ -2017,14 +2021,14 @@
                   <div className="flex flex-wrap items-center gap-x-8 gap-y-3 text-xs">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-slate-400 font-medium">Organize by:</span>
-                      <div className="flex bg-cinema-950 p-1 rounded-xl border border-slate-800">
+                      <div className="flex bg-dusk-950 p-1 rounded-xl border border-slate-800">
                         {PRINT_GROUPINGS.map(g => (
                           <button
                             key={g.id}
                             onClick={() => setSettings(s => ({ ...s, printGroup: g.id }))}
                             aria-pressed={settings.printGroup === g.id}
                             className={`px-3 py-1.5 rounded-lg font-semibold transition ${
-                              settings.printGroup === g.id ? 'bg-amber-500 text-slate-950' : 'text-slate-400 hover:text-slate-200'
+                              settings.printGroup === g.id ? 'bg-accent-500 text-slate-950' : 'text-slate-400 hover:text-slate-200'
                             }`}
                           >
                             {g.label}
@@ -2041,7 +2045,7 @@
                             type="checkbox"
                             checked={settings[key]}
                             onChange={(e) => setSettings(s => ({ ...s, [key]: e.target.checked }))}
-                            className="accent-amber-500"
+                            className="accent-accent-500"
                           />
                           {label}
                         </label>
@@ -2051,9 +2055,9 @@
                     {logs.length > 0 && (
                       <div className="flex items-center gap-2 text-slate-400">
                         <span><b className="text-slate-200">{includedLogs.length}</b> of {logs.length} entries included</span>
-                        <button onClick={() => setPrintExcluded([])} className="text-amber-400 hover:underline">All</button>
+                        <button onClick={() => setPrintExcluded([])} className="text-accent-400 hover:underline">All</button>
                         <span className="text-slate-600">·</span>
-                        <button onClick={() => setPrintExcluded(logs.map(l => l.id))} className="text-amber-400 hover:underline">None</button>
+                        <button onClick={() => setPrintExcluded(logs.map(l => l.id))} className="text-accent-400 hover:underline">None</button>
                       </div>
                     )}
                   </div>
@@ -2073,9 +2077,9 @@
                   </div>
                 </div>
 
-                <div className="bg-cinema-900 rounded-2xl border border-slate-800 p-6 shadow-xl space-y-3">
+                <div className="bg-dusk-900 rounded-2xl border border-slate-800 p-6 shadow-xl space-y-3">
                   <h2 className="text-sm font-bold text-slate-100 flex items-center gap-2">
-                    <i className="fa-solid fa-table text-amber-400"></i>
+                    <i className="fa-solid fa-table text-accent-400"></i>
                     Spreadsheet & Other Formats
                   </h2>
                   <p className="text-xs text-slate-400 max-w-2xl">Every entry in film order, regardless of the layout above. Good for sorting in Google Sheets.</p>
@@ -2085,9 +2089,9 @@
                   </div>
                 </div>
 
-                <div className="bg-cinema-900 rounded-2xl border border-slate-800 p-6 shadow-xl space-y-3">
+                <div className="bg-dusk-900 rounded-2xl border border-slate-800 p-6 shadow-xl space-y-3">
                   <h2 className="text-sm font-bold text-slate-100 flex items-center gap-2">
-                    <i className="fa-solid fa-folder-open text-amber-400"></i>
+                    <i className="fa-solid fa-folder-open text-accent-400"></i>
                     Project File
                   </h2>
                   <p className="text-xs text-slate-400 max-w-2xl">
@@ -2113,7 +2117,7 @@
               role="status"
               aria-live="polite"
               className={`fixed bottom-6 right-6 font-bold px-4 py-2.5 rounded-xl shadow-2xl text-xs flex items-center gap-3 z-50 ${
-                toast.tone === 'warn' ? 'bg-rose-500 text-white' : 'bg-amber-500 text-slate-950'
+                toast.tone === 'warn' ? 'bg-rose-500 text-white' : 'bg-accent-500 text-slate-950'
               }`}
             >
               <i className={`fa-solid ${toast.tone === 'warn' ? 'fa-circle-exclamation' : 'fa-circle-check'}`}></i>
@@ -2132,10 +2136,10 @@
           {/* SHORTCUTS MODAL */}
           {showShortcutsModal && (
             <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50" onClick={() => setShowShortcutsModal(false)}>
-              <div role="dialog" aria-modal="true" aria-label="Keyboard shortcuts" className="bg-cinema-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+              <div role="dialog" aria-modal="true" aria-label="Keyboard shortcuts" className="bg-dusk-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
                 <div className="flex items-center justify-between border-b border-slate-800 pb-3">
                   <h3 className="font-bold text-slate-100 text-sm flex items-center gap-2">
-                    <i className="fa-solid fa-keyboard text-amber-400"></i>
+                    <i className="fa-solid fa-keyboard text-accent-400"></i>
                     Keyboard Shortcuts
                   </h3>
                   <button onClick={() => setShowShortcutsModal(false)} className="text-slate-400 hover:text-slate-100" aria-label="Close">
@@ -2152,16 +2156,16 @@
                     ['Back 5 seconds (clock: −1s)', '←'],
                     ['Forward 5 seconds (clock: +1s)', '→']
                   ].map(([label, key]) => (
-                    <div key={label} className="flex justify-between items-center bg-cinema-950 p-2 rounded-lg border border-slate-800">
+                    <div key={label} className="flex justify-between items-center bg-dusk-950 p-2 rounded-lg border border-slate-800">
                       <span className="text-slate-300">{label}</span>
-                      <kbd className="bg-cinema-800 text-amber-400 font-mono px-2 py-0.5 rounded border border-slate-700 whitespace-nowrap">{key}</kbd>
+                      <kbd className="bg-dusk-800 text-accent-400 font-mono px-2 py-0.5 rounded border border-slate-700 whitespace-nowrap">{key}</kbd>
                     </div>
                   ))}
                 </div>
 
                 <button
                   onClick={() => setShowShortcutsModal(false)}
-                  className="w-full py-2 bg-cinema-800 hover:bg-cinema-700 text-slate-200 font-bold text-xs rounded-xl border border-slate-700"
+                  className="w-full py-2 bg-dusk-800 hover:bg-dusk-700 text-slate-200 font-bold text-xs rounded-xl border border-slate-700"
                 >
                   Close
                 </button>
