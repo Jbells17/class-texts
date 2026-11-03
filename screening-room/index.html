@@ -860,6 +860,18 @@
 
       const currentVideoKey = () => ({ local: localFileName, youtube: youtubeId, gdrive: gdriveId }[sourceMode] || '');
 
+      // Keep the player pinned under the header while the notes scroll: publish the header's
+      // height as a CSS variable so the sticky offset tracks it when the window is resized
+      useEffect(() => {
+        const header = document.querySelector('header');
+        if (!header) return;
+        const update = () => document.documentElement.style.setProperty('--header-h', header.offsetHeight + 'px');
+        update();
+        const ro = new ResizeObserver(update);
+        ro.observe(header);
+        return () => ro.disconnect();
+      }, []);
+
       // Bring the player back on screen when ▶ is pressed from further down the page
       const scrollPlayerIntoView = () => {
         const el = playerCardRef.current;
@@ -1335,7 +1347,7 @@
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
 
                   {/* LEFT: PLAYER */}
-                  <div className="md:col-span-7 space-y-4" ref={playerCardRef}>
+                  <div className="md:col-span-7 space-y-4 md:sticky md:top-[calc(var(--header-h,0px)+1rem)] md:max-h-[calc(100vh-var(--header-h,0px)-1.5rem)] md:overflow-y-auto" ref={playerCardRef}>
                     <div className="bg-dusk-900 rounded-2xl border border-slate-800 overflow-hidden shadow-xl">
 
                       {/* Source selector */}
