@@ -453,7 +453,15 @@
       const [ytError, setYtError] = useState(null);
 
       // Stopwatch: clock-based so it doesn't drift, used for Stopwatch and Google Drive modes
-      const [sw, setSw] = useState({ baseMs: 0, startedAt: null });
+      // Restored from the last session, so a refresh mid-film keeps counting; a clock left running
+      // for hours (laptop closed, back the next day) comes back paused where it was
+      const [sw, setSw] = useState(() => {
+        const s = saved.sw || {};
+        const baseMs = Math.max(0, Number(s.baseMs) || 0);
+        const startedAt = Number(s.startedAt) || null;
+        const stillRunning = startedAt && Date.now() - startedAt < 4 * 3600 * 1000;
+        return stillRunning ? { baseMs, startedAt } : { baseMs, startedAt: null };
+      });
       const [, setTick] = useState(0);
 
       // Taxonomy & observation form
@@ -515,7 +523,7 @@
       // Debounced so typing in a field doesn't re-serialize every screenshot on each keystroke
       useEffect(() => {
         const t = setTimeout(() => {
-          const data = { meta, logs, taxonomy, settings, printExcluded, sourceMode, youtubeId, gdriveId, localFileName };
+          const data = { meta, logs, taxonomy, settings, printExcluded, sourceMode, youtubeId, gdriveId, localFileName, sw };
           try {
             localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
             setStorageWarning(false);
@@ -528,7 +536,7 @@
           }
         }, 400);
         return () => clearTimeout(t);
-      }, [meta, logs, taxonomy, settings, printExcluded, sourceMode, youtubeId, gdriveId, localFileName]);
+      }, [meta, logs, taxonomy, settings, printExcluded, sourceMode, youtubeId, gdriveId, localFileName, sw]);
 
       // ---------- Stopwatch ----------
       useEffect(() => {
@@ -690,6 +698,8 @@
         setLocalVideoSrc(URL.createObjectURL(file));
         setLocalFileName(file.name);
         setCurrentTime(0);
+        setDuration(0);
+        setIsPlaying(false);
         showToast(`Loaded ${file.name}`);
       };
 
@@ -861,16 +871,25 @@
       const currentVideoKey = () => ({ local: localFileName, youtube: youtubeId, gdrive: gdriveId }[sourceMode] || '');
 
       // Keep the player pinned under the header while the notes scroll: publish the header's
-      // height as a CSS variable so the sticky offset tracks it when the window is resized
+      // height as a CSS variable so the sticky offset tracks it when the window is resized.
+      // The player's chrome (source bar, controls, Mark bar) is measured the same way, so on a
+      // short screen the video area shrinks to keep the whole card, Mark button included, in view.
       useEffect(() => {
         const header = document.querySelector('header');
         if (!header) return;
-        const update = () => document.documentElement.style.setProperty('--header-h', header.offsetHeight + 'px');
+        const card = playerCardRef.current && playerCardRef.current.firstElementChild;
+        const update = () => {
+          const root = document.documentElement.style;
+          root.setProperty('--header-h', header.offsetHeight + 'px');
+          const area = displayAreaRef.current;
+          if (card && area) root.setProperty('--player-chrome', (card.offsetHeight - area.offsetHeight) + 'px');
+        };
         update();
         const ro = new ResizeObserver(update);
         ro.observe(header);
+        if (card) ro.observe(card);
         return () => ro.disconnect();
-      }, []);
+      }, [activeTab]);
 
       // Bring the player back on screen when ▶ is pressed from further down the page
       const scrollPlayerIntoView = () => {
@@ -1384,7 +1403,7 @@
                       <video ref={captureVideoRef} muted playsInline aria-hidden="true" style={{ position: 'fixed', width: 1, height: 1, opacity: 0, pointerEvents: 'none', left: 0, top: 0 }} />
 
                       {/* DISPLAY AREA — all sources stay mounted so switching tabs doesn't lose your place */}
-                      <div ref={displayAreaRef} className="relative aspect-video bg-black overflow-hidden">
+                      <div ref={displayAreaRef} className="relative w-full aspect-video bg-black overflow-hidden md:max-h-[max(12rem,calc(100vh-var(--header-h,0px)-var(--player-chrome,0px)-2rem))]">
 
                         {/* LOCAL VIDEO */}
                         <div className={panelClass('local')}>
@@ -1536,7 +1555,7 @@
                               }}
                             >
                               <div className="absolute inset-y-0 left-0 bg-accent-500/40 rounded-full pointer-events-none" style={{ width: `${Math.min(100, (currentTime / duration) * 100)}%` }}></div>
-                              {sortedLogs.map(l => (
+                              {sortedLogs.filter(l => !l.source || (l.source === sourceMode && (!l.videoKey || l.videoKey === currentVideoKey()))).map(l => (
                                 <button
                                   key={l.id}
                                   title={`${formatTime(l.timestamp)} ${l.tags.join(', ')}`}
@@ -1584,7 +1603,7 @@
                           <p className="text-[11px] text-slate-400">
                             <i className="fa-solid fa-circle-info text-blue-400 mr-1"></i>
                             {settings.driveAutoClock
-                              ? <>Google Drive won't share the video's time, so The Screening Room keeps a clock. <b>Just press play in the video</b>: the clock starts and pauses with your clicks. If you drag Drive's slider, click the clock and type the new time.</>
+                              ? <>Google Drive won't share the video's time, so The Screening Room keeps a clock that flips with <b>every click inside the video</b>, play and pause included. Use the play button rather than the slider when you can. If you do skip around, make sure the clock is running, then click it and type the new time.</>
                               : <>Google Drive won't share the video's time with this page. Press <b>Start clock</b> when you press play, pause both together, and use ±1s to keep them matched.</>}
                           </p>
                           <div className="flex flex-wrap items-center gap-2">
@@ -1670,8 +1689,8 @@
                   </div>
 
                   {/* RIGHT: OBSERVATION FORM */}
-                  <div className="md:col-span-5" ref={formRef}>
-                    <div data-log-form className={`bg-dusk-900 rounded-2xl border p-5 shadow-xl flex flex-col gap-4 scroll-mt-40 ${editingLogId ? 'border-accent-500/60' : 'border-slate-800'}`}>
+                  <div className="md:col-span-5" ref={formRef} style={{ scrollMarginTop: 'calc(var(--header-h, 0px) + 1rem)' }}>
+                    <div data-log-form className={`bg-dusk-900 rounded-2xl border p-5 shadow-xl flex flex-col gap-4 ${editingLogId ? 'border-accent-500/60' : 'border-slate-800'}`}>
 
                       <div className="flex items-center justify-between border-b border-slate-800 pb-3">
                         <h2 className="font-bold text-sm text-slate-200 flex items-center gap-2">
@@ -1860,7 +1879,7 @@
                       <i className="fa-solid fa-timeline text-accent-400 text-base"></i>
                       <h2 className="font-bold text-sm text-slate-100">Observation Timeline</h2>
                       <span className="text-xs text-slate-400 bg-dusk-950 px-2.5 py-0.5 rounded-full border border-slate-800">
-                        {filteredLogs.length === logs.length ? `${logs.length} entries` : `${filteredLogs.length} of ${logs.length}`}
+                        {filteredLogs.length === logs.length ? `${logs.length} ${logs.length === 1 ? 'entry' : 'entries'}` : `${filteredLogs.length} of ${logs.length}`}
                       </span>
                     </div>
 
