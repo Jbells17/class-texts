@@ -71,7 +71,7 @@ CSS = """
  .define{flex:0 0 auto;width:190px;border:0;border-radius:6px;padding:.45rem .7rem;font-size:.95rem;font-family:inherit}
  .vtip{flex:0 0 auto;font-size:.72rem;line-height:1.25;opacity:.9;white-space:nowrap;font-family:-apple-system,system-ui,sans-serif}
  @media (max-width:1150px){.vtip{display:none}}
- .results{display:none;position:absolute;top:46px;right:0;width:min(440px,92vw);max-height:72vh;overflow:auto;background:#fff;color:var(--ink);border-left:1px solid var(--line);border-bottom:1px solid var(--line);box-shadow:-4px 6px 20px rgba(0,0,0,.25);z-index:60;font-family:-apple-system,system-ui,sans-serif}
+ .results{display:none;position:absolute;top:46px;right:0;width:min(440px,92vw);max-height:60vh;overflow:auto;background:#fff;color:var(--ink);border-left:1px solid var(--line);border-bottom:1px solid var(--line);box-shadow:-4px 6px 20px rgba(0,0,0,.25);z-index:60;font-family:-apple-system,system-ui,sans-serif}
  .results .res{display:block;width:100%;text-align:left;background:#fff;border:0;border-bottom:1px solid var(--line);padding:.6rem .8rem;cursor:pointer;font-size:.88rem;line-height:1.45;color:var(--ink)}
  .results .res:hover{background:#f3eee5}
  .results .pg{display:inline-block;font-weight:700;color:var(--accent);margin-right:.4rem}
@@ -79,6 +79,8 @@ CSS = """
  .results .nores,.results .hint{padding:.8rem;color:var(--muted);font-style:italic;font-size:.85rem}
  .results .reshdr{padding:.5rem .8rem;font-size:.8rem;font-weight:700;color:var(--muted);border-bottom:1px solid var(--line);background:#faf7f1;position:sticky;top:0}
  .results .res.active{background:#fbf0d8}
+ .pclose{float:right;background:transparent;border:0;font-size:1.35rem;line-height:1;color:var(--muted);cursor:pointer;padding:0 .25rem;margin:-.15rem -.35rem 0 .6rem;font-family:-apple-system,system-ui,sans-serif}
+ .pclose:hover{color:var(--accent)}
  .defpop{display:none;position:absolute;top:46px;right:0;width:min(380px,92vw);max-height:62vh;overflow:auto;background:#fff;color:var(--ink);border-left:1px solid var(--line);border-bottom:1px solid var(--line);box-shadow:-4px 6px 20px rgba(0,0,0,.25);z-index:62;padding:.85rem 1rem;font-family:-apple-system,system-ui,sans-serif}
  .defpop .dword{font-weight:700;font-size:1.05rem;color:var(--accent);margin-bottom:.25rem}
  .defpop .ddef{font-size:.92rem;line-height:1.5}
@@ -90,7 +92,32 @@ CSS = """
 APP = r"""
 <script>
 (function(){
-  var BLOBS={}, STATE={};
+  var BLOBS={}, STATE={}, OPEN=null;
+  // Search/define panels sit over the PDF. They must be easy to dismiss, or a
+  // trackpad scroll with the cursor over the panel never reaches the PDF
+  // (Chromebook reports of a 'stuck menu'). Close via the x, Esc, or clicking
+  // the text itself (focus moving into the PDF iframe blurs this window).
+  function xbtn(i){ return '<button class="pclose" type="button" title="Close (Esc)" onclick="closePanels('+i+')">&times;</button>'; }
+  window.closePanels=function(i){
+    var sr=document.getElementById('res'+i); if(sr){ sr.style.display='none'; }
+    var dp=document.getElementById('def'+i); if(dp){ dp.style.display='none'; }
+  };
+  window.addEventListener('blur',function(){
+    if(OPEN===null) return;
+    var a=document.activeElement;
+    if(a && a.tagName==='IFRAME') closePanels(OPEN);
+  });
+  document.addEventListener('keydown',function(e){
+    if(OPEN===null) return;
+    var t=e.target, tag=t&&t.tagName, inField=(tag==='INPUT'||tag==='TEXTAREA');
+    if(e.key==='Escape'){ closePanels(OPEN); if(inField) t.blur(); return; }
+    // Keyboard scrolling after typing in a box: focus is on the outer page, which
+    // has nothing to scroll, so hand the keys to the PDF viewer instead.
+    if(inField || tag==='BUTTON') return;
+    if(['ArrowUp','ArrowDown','PageUp','PageDown','Home','End',' '].indexOf(e.key)!==-1){
+      var f=document.getElementById('f'+OPEN); if(f){ f.focus(); }
+    }
+  });
   // In LockDown Browser, fullscreen hides the toolbar/tabs and strands students.
   // The iframes already deny fullscreen; if anything still enters it, exit at once.
   document.addEventListener('fullscreenchange',function(){
@@ -120,9 +147,12 @@ APP = r"""
     var w=document.getElementById('w'+i); if(w){ w.value=''; }
     var dp=document.getElementById('def'+i); if(dp){ dp.style.display='none'; dp.innerHTML=''; }
     STATE[i]={matches:[],cur:-1,curPage:1,lastWord:''};
+    OPEN=i;
     loadDict();  // warm the dictionary in the background so the first lookup is instant
   };
   window.closeText=function(i){
+    OPEN=null;
+    closePanels(i);
     document.getElementById('v'+i).style.display='none';
     document.getElementById('picker').style.display='block';
   };
@@ -142,7 +172,7 @@ APP = r"""
     var q=(query||'').trim().toLowerCase();
     if(q.length<2){ panel.style.display='none'; panel.innerHTML=''; return; }
     var ps=pages(i);
-    if(!ps.length){ panel.innerHTML='<div class="hint">Search isn\'t available for this text.</div>'; panel.style.display='block'; return; }
+    if(!ps.length){ panel.innerHTML=xbtn(i)+'<div class="hint">Search isn\'t available for this text.</div>'; panel.style.display='block'; return; }
     var out=[], count=0, CAP=80;
     for(var pg=0; pg<ps.length && count<CAP; pg++){
       var text=ps[pg], low=text.toLowerCase(), pos=low.indexOf(q);
@@ -155,8 +185,8 @@ APP = r"""
       }
     }
     var n=STATE[i].matches.length;
-    if(!n){ panel.innerHTML='<div class="nores">No matches for &ldquo;'+esc(query)+'&rdquo;.</div>'; panel.style.display='block'; return; }
-    var hdr='<div class="reshdr" id="hdr'+i+'">'+n+(count>=CAP?'+':'')+' match'+(n===1?'':'es')+' — press Enter to step through</div>';
+    if(!n){ panel.innerHTML=xbtn(i)+'<div class="nores">No matches for &ldquo;'+esc(query)+'&rdquo;.</div>'; panel.style.display='block'; return; }
+    var hdr='<div class="reshdr">'+xbtn(i)+'<span id="hdr'+i+'">'+n+(count>=CAP?'+':'')+' match'+(n===1?'':'es')+' — press Enter to step through</span></div>';
     panel.innerHTML=hdr+out.join('');
     panel.style.display='block';
   }
@@ -217,14 +247,14 @@ APP = r"""
     var sr=document.getElementById('res'+i); if(sr){ sr.style.display='none'; }  // one panel at a time
     if(w.length<2){ pop.style.display='none'; pop.innerHTML=''; return; }
     pop.style.display='block';
-    pop.innerHTML='<div class="hint">Looking up…</div>';
+    pop.innerHTML=xbtn(i)+'<div class="hint">Looking up…</div>';
     loadDict().then(function(d){
       if(clean(document.getElementById('w'+i).value)!==w) return;  // a newer keystroke won
       if(!STATE[i]) STATE[i]={matches:[],cur:-1,curPage:1,lastWord:''};
       STATE[i].lastWord=w;
       var def=findDef(d,w);
       var findBtn='<button class="findbtn" onclick="findLast('+i+')">Find &ldquo;'+esc(w)+'&rdquo; in the text →</button>';
-      pop.innerHTML = (def
+      pop.innerHTML = xbtn(i) + (def
         ? '<div class="dword">'+esc(w)+'</div><div class="ddef">'+esc(def)+'</div>'
         : '<div class="nores">No definition found for &ldquo;'+esc(raw)+'&rdquo;.</div>') + findBtn;
     });
