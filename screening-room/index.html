@@ -564,12 +564,20 @@
       // Drive's player won't say when it plays or pauses, and Google blocks other sites from streaming
       // Drive files themselves. But the page can tell when someone clicks into the player (the window
       // loses focus to its frame), so each click flips the clock: Drive's ▶ starts it, pause stops it.
+      // Auto-sync (see the Drive auto-sync section) watches the captured player and drives the clock itself
+      const [driveSync, setDriveSync] = useState(null); // 'playing' | 'paused' while auto-sync is on
+      const driveSyncOn = sourceMode === 'gdrive' && !!gdriveId && !!frameCapture && settings.driveAutoClock;
+      // While auto-sync (below) is watching the player, clicks are ignored: the picture is the better signal.
       const driveFrameRef = useRef(null);
+      const lastFlipRef = useRef(0);
       useEffect(() => {
-        if (sourceMode !== 'gdrive' || !gdriveId || !settings.driveAutoClock) return;
+        if (sourceMode !== 'gdrive' || !gdriveId || !settings.driveAutoClock || driveSyncOn) return;
         const onBlur = () => setTimeout(() => {
           const frame = driveFrameRef.current;
           if (!frame || document.activeElement !== frame) return; // focus went to another tab or app instead
+          const now = Date.now();
+          if (now - lastFlipRef.current < 600) return; // a double-click or click-then-drag is one action
+          lastFlipRef.current = now;
           const starting = !swRunningRef.current;
           swToggle();
           showToast(starting ? 'Clock started with the video' : 'Clock paused with the video');
@@ -579,7 +587,7 @@
         }, 0);
         window.addEventListener('blur', onBlur);
         return () => window.removeEventListener('blur', onBlur);
-      }, [sourceMode, gdriveId, settings.driveAutoClock]);
+      }, [sourceMode, gdriveId, settings.driveAutoClock, driveSyncOn]);
 
       const commitClockDraft = () => {
         const secs = parseTime(clockDraft || '');
@@ -713,6 +721,19 @@
         return canvas.toDataURL('image/jpeg', 0.65);
       };
 
+      // Where the player sits inside the captured tab, in capture-video pixels (null if not capturable)
+      const playerRegion = () => {
+        const cv = captureVideoRef.current;
+        const area = displayAreaRef.current;
+        if (!frameCapture || !cv || !cv.videoWidth || !area) return null;
+        if (frameCapture.cropped) return { sx: 0, sy: 0, sw: cv.videoWidth, sh: cv.videoHeight };
+        // No Region Capture (non-Chrome browsers): the frame is the whole tab, so cut the player out by position
+        const r = area.getBoundingClientRect();
+        if (r.bottom <= 0 || r.top >= window.innerHeight) return null; // player scrolled off screen
+        const k = cv.videoWidth / window.innerWidth;
+        return { sx: r.left * k, sy: r.top * k, sw: r.width * k, sh: r.height * k };
+      };
+
       const captureFrame = () => {
         try {
           if (sourceMode === 'local') {
@@ -720,19 +741,83 @@
             return v && v.videoWidth ? snapshot(v, 0, 0, v.videoWidth, v.videoHeight) : null;
           }
           // YouTube/Drive: read from the tab capture, if it's on
-          const cv = captureVideoRef.current;
-          const area = displayAreaRef.current;
-          if (!frameCapture || sourceMode === 'stopwatch' || !cv || !cv.videoWidth || !area) return null;
-          const r = area.getBoundingClientRect();
-          if (r.bottom <= 0 || r.top >= window.innerHeight) return null; // player scrolled off screen
-          if (frameCapture.cropped) return snapshot(cv, 0, 0, cv.videoWidth, cv.videoHeight);
-          // No Region Capture (non-Chrome browsers): the frame is the whole tab, so cut the player out by position
-          const k = cv.videoWidth / window.innerWidth;
-          return snapshot(cv, r.left * k, r.top * k, r.width * k, r.height * k);
+          if (sourceMode === 'stopwatch') return null;
+          const g = playerRegion();
+          return g ? snapshot(captureVideoRef.current, g.sx, g.sy, g.sw, g.sh) : null;
         } catch (e) {
           return null;
         }
       };
+
+      // ---------- Drive auto-sync ----------
+      // With tab capture on, the page can see (and, if the student shared tab audio, hear) Drive's
+      // player. The clock runs while the picture is changing or sound is playing, and pauses after a
+      // few seconds of neither, so play, pause and buffering sync themselves whatever was clicked.
+      // What it can't know is where a drag of the slider landed: that still needs the typed time.
+      useEffect(() => {
+        if (!driveSyncOn) { setDriveSync(null); return; }
+        const cv = captureVideoRef.current;
+        const canvas = document.createElement('canvas');
+        canvas.width = 48;
+        canvas.height = 27;
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        let prev = null;
+        let activeSamples = 0;
+        let firstActive = 0; // when the current run of activity began
+        let lastActive = Date.now();
+        let audioBuf = null;
+        const startedAt = Date.now();
+        const tick = () => {
+          const g = playerRegion();
+          if (!g) return;
+          const now = Date.now();
+          let motion = false;
+          try {
+            // Skip the top and bottom of the player, where Drive's title bar and controls fade in and out
+            ctx.drawImage(cv, g.sx, g.sy + g.sh * 0.18, g.sw, g.sh * 0.62, 0, 0, canvas.width, canvas.height);
+            const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+            if (prev) {
+              let diff = 0;
+              for (let i = 0; i < data.length; i += 4) {
+                diff += Math.abs(data[i] - prev[i]) + Math.abs(data[i + 1] - prev[i + 1]) + Math.abs(data[i + 2] - prev[i + 2]);
+              }
+              motion = diff / (data.length * 0.75) > 1.5; // mean change per channel, 0-255
+            }
+            prev = data;
+          } catch (e) { /* no frame yet */ }
+          let sound = false;
+          const an = frameCapture.analyser;
+          if (an) {
+            if (!audioBuf) audioBuf = new Uint8Array(an.fftSize);
+            an.getByteTimeDomainData(audioBuf);
+            let peak = 0;
+            for (let i = 0; i < audioBuf.length; i++) peak = Math.max(peak, Math.abs(audioBuf[i] - 128));
+            sound = peak > 4;
+          }
+          // The first frames of a capture change on their own as Chrome settles its resolution
+          if (now - startedAt < 2500) { lastActive = now; return; }
+          if (motion || sound) {
+            if (!activeSamples) firstActive = now;
+            activeSamples++;
+            lastActive = now;
+          } else activeSamples = 0;
+          if (!swRunningRef.current && activeSamples >= 4) {
+            // Credit the clock with the moment the picture first moved, so detection lag doesn't cost time
+            setSw(s => ({ baseMs: s.baseMs + (now - firstActive), startedAt: now }));
+            setDriveSync('playing');
+            showToast('Clock started with the video');
+          } else if (swRunningRef.current && now - lastActive > 3000) {
+            // Stop the clock where the picture last moved, not where we noticed
+            setSw(s => ({ baseMs: s.baseMs + Math.max(0, lastActive - (s.startedAt || now)), startedAt: null }));
+            setDriveSync('paused');
+            showToast('Clock paused with the video');
+          } else {
+            setDriveSync(swRunningRef.current ? 'playing' : 'paused');
+          }
+        };
+        const t = setInterval(tick, 250);
+        return () => clearInterval(t);
+      }, [driveSyncOn, frameCapture]);
 
       // YouTube and Drive play inside Google's own frames, which the browser won't let this page read.
       // With the student's permission, capturing this tab (cropped to the player) gets the frames anyway.
@@ -740,7 +825,8 @@
       const startFrameCapture = () => {
         navigator.mediaDevices.getDisplayMedia({
           video: { displaySurface: 'browser', frameRate: 5 },
-          audio: false,
+          // Tab audio (if the student ticks it) lets Drive auto-sync hear the film; the tab keeps playing it normally
+          audio: { suppressLocalAudioPlayback: false },
           preferCurrentTab: true,
           selfBrowserSurface: 'include',
           surfaceSwitching: 'exclude'
@@ -761,18 +847,35 @@
           const v = captureVideoRef.current;
           v.srcObject = stream;
           await v.play().catch(() => {});
+          let analyser = null, audioCtx = null;
+          if (stream.getAudioTracks().length && window.AudioContext) {
+            try {
+              audioCtx = new AudioContext();
+              analyser = audioCtx.createAnalyser();
+              analyser.fftSize = 512;
+              audioCtx.createMediaStreamSource(stream).connect(analyser); // listen only; nothing goes to the speakers
+              audioCtx.resume();
+            } catch (e) { analyser = null; }
+          }
+          const capture = { track, cropped, analyser, audioCtx };
           // Fires if the student presses "Stop sharing" in Chrome's bar
           track.addEventListener('ended', () => {
             v.srcObject = null;
+            if (audioCtx) audioCtx.close().catch(() => {});
             setFrameCapture(null);
           });
-          setFrameCapture({ track, cropped });
-          showToast('Frame capture is on. New entries will include a still of the video.');
+          setFrameCapture(capture);
+          showToast(modeRef.current === 'gdrive'
+            ? 'Auto-sync is on. The clock will follow the video, and entries include a still.'
+            : 'Frame capture is on. New entries will include a still of the video.');
         }).catch(() => showToast('Frame capture was cancelled or blocked on this computer.', { tone: 'warn' }));
       };
 
       const stopFrameCapture = () => {
-        if (frameCapture) frameCapture.track.stop();
+        if (frameCapture) {
+          frameCapture.track.stop();
+          if (frameCapture.audioCtx) frameCapture.audioCtx.close().catch(() => {});
+        }
         if (captureVideoRef.current) captureVideoRef.current.srcObject = null;
         setFrameCapture(null);
       };
@@ -1602,8 +1705,10 @@
                         <div className="p-3 bg-dusk-950 border-t border-slate-800 space-y-2">
                           <p className="text-[11px] text-slate-400">
                             <i className="fa-solid fa-circle-info text-blue-400 mr-1"></i>
-                            {settings.driveAutoClock
-                              ? <>Google Drive won't share the video's time, so The Screening Room keeps a clock that flips with <b>every click inside the video</b>, play and pause included. Use the play button rather than the slider when you can. If you do skip around, make sure the clock is running, then click it and type the new time.</>
+                            {driveSyncOn
+                              ? <>Auto-sync is on: the clock runs while the video plays and pauses when it stops, whatever you click. If you skip around, click the clock and type the new time.</>
+                              : settings.driveAutoClock
+                              ? <>Google Drive won't share the video's time, so The Screening Room keeps a clock.{canTabCapture && <> <b>Turn on auto-sync</b> below and the clock follows the video by itself.</>} Until then, every click inside the video flips the clock, play and pause included, so use the play button rather than the slider. If you skip around, make sure the clock is running, then click it and type the new time.</>
                               : <>Google Drive won't share the video's time with this page. Press <b>Start clock</b> when you press play, pause both together, and use ±1s to keep them matched.</>}
                           </p>
                           <div className="flex flex-wrap items-center gap-2">
@@ -1629,6 +1734,12 @@
                             <button onClick={() => swNudge(-1)} className="px-2.5 py-1.5 bg-dusk-800 hover:bg-dusk-700 text-slate-300 rounded-lg text-xs font-mono">-1s</button>
                             <button onClick={() => swNudge(1)} className="px-2.5 py-1.5 bg-dusk-800 hover:bg-dusk-700 text-slate-300 rounded-lg text-xs font-mono">+1s</button>
                             <button onClick={swReset} className="px-2.5 py-1.5 bg-dusk-800 hover:bg-dusk-700 text-slate-300 rounded-lg text-xs">Reset</button>
+                            {driveSync && (
+                              <span className={`text-[11px] font-semibold flex items-center gap-1.5 ${driveSync === 'playing' ? 'text-emerald-400' : 'text-slate-400'}`} aria-live="polite">
+                                <i className={`fa-solid ${driveSync === 'playing' ? 'fa-circle-play' : 'fa-circle-pause'}`}></i>
+                                {driveSync === 'playing' ? 'Video playing' : 'Video paused'}
+                              </span>
+                            )}
                           </div>
                           <label className="flex items-center gap-2 text-[11px] text-slate-400 cursor-pointer select-none">
                             <input
@@ -1637,7 +1748,7 @@
                               onChange={(e) => setSettings(s => ({ ...s, driveAutoClock: e.target.checked }))}
                               className="accent-accent-500"
                             />
-                            Start and pause the clock when I click play or pause in the video
+                            Keep the clock in step with the video for me
                           </label>
                         </div>
                       )}
@@ -1647,21 +1758,25 @@
                         <div className="px-3 py-2 bg-dusk-950 border-t border-slate-800 flex flex-wrap items-center justify-between gap-2 text-[11px]">
                           {frameCapture ? (
                             <>
-                              <span className="text-emerald-400"><i className="fa-solid fa-camera mr-1.5"></i>Frame capture is on. New entries include a still of the video.</span>
+                              <span className="text-emerald-400"><i className="fa-solid fa-camera mr-1.5"></i>
+                                {sourceMode === 'gdrive' ? 'Auto-sync is on: the clock follows the video, and new entries include a still.' : 'Frame capture is on. New entries include a still of the video.'}
+                              </span>
                               <button onClick={stopFrameCapture} className="text-slate-400 hover:text-rose-400">Turn off</button>
                             </>
                           ) : canTabCapture ? (
                             <>
                               <span className="text-slate-400">
                                 <i className="fa-solid fa-camera mr-1.5"></i>
-                                {sourceMode === 'youtube' ? 'YouTube' : 'Google Drive'} won't hand frames to other sites. Turn on capture to save stills.
+                                {sourceMode === 'gdrive'
+                                  ? <>One click, and Chrome asks to share this tab (tick <b>share tab audio</b> too). The clock then follows the video on its own, and entries get stills.</>
+                                  : 'YouTube won\'t hand frames to other sites. Turn on capture to save stills.'}
                               </span>
                               <button
                                 onClick={startFrameCapture}
                                 title={'Chrome will ask to share this tab: pick "this tab". Nothing is recorded or sent anywhere.'}
                                 className="px-2.5 py-1 rounded-lg bg-dusk-800 hover:bg-dusk-700 text-accent-400 font-semibold whitespace-nowrap"
                               >
-                                Turn on frame capture
+                                {sourceMode === 'gdrive' ? 'Turn on auto-sync' : 'Turn on frame capture'}
                               </button>
                             </>
                           ) : (
