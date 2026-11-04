@@ -726,7 +726,8 @@
         const cv = captureVideoRef.current;
         const area = displayAreaRef.current;
         if (!frameCapture || !cv || !cv.videoWidth || !area) return null;
-        if (frameCapture.cropped) return { sx: 0, sy: 0, sw: cv.videoWidth, sh: cv.videoHeight };
+        // Fullscreen: the player covers the whole tab, and the crop was lifted (see below)
+        if (frameCapture.cropped || fullscreenRef.current) return { sx: 0, sy: 0, sw: cv.videoWidth, sh: cv.videoHeight };
         // No Region Capture (non-Chrome browsers): the frame is the whole tab, so cut the player out by position
         const r = area.getBoundingClientRect();
         if (r.bottom <= 0 || r.top >= window.innerHeight) return null; // player scrolled off screen
@@ -832,10 +833,11 @@
           surfaceSwitching: 'exclude'
         }).then(async (stream) => {
           const [track] = stream.getVideoTracks();
-          let cropped = false;
+          let cropped = false, cropTarget = null;
           if (window.CropTarget && track.cropTo && displayAreaRef.current) {
             try {
-              await track.cropTo(await CropTarget.fromElement(displayAreaRef.current));
+              cropTarget = await CropTarget.fromElement(displayAreaRef.current);
+              await track.cropTo(cropTarget);
               cropped = true;
             } catch (e) {
               // Chrome only allows cropping a capture of this same tab, so another tab or window was picked
@@ -857,7 +859,7 @@
               audioCtx.resume();
             } catch (e) { analyser = null; }
           }
-          const capture = { track, cropped, analyser, audioCtx };
+          const capture = { track, cropped, cropTarget, analyser, audioCtx };
           // Fires if the student presses "Stop sharing" in Chrome's bar
           track.addEventListener('ended', () => {
             v.srcObject = null;
@@ -879,6 +881,27 @@
         if (captureVideoRef.current) captureVideoRef.current.srcObject = null;
         setFrameCapture(null);
       };
+
+      // When Drive's (or YouTube's) player goes fullscreen it covers the whole tab, so a capture
+      // cropped to the player's spot on the page would see only a corner of the film, and Chrome's
+      // blue capture frame would hang over the picture. Lift the crop for the duration instead.
+      const fullscreenRef = useRef(false);
+      useEffect(() => {
+        const onChange = () => {
+          const fs = !!(document.fullscreenElement || document.webkitFullscreenElement);
+          fullscreenRef.current = fs;
+          const fc = frameCapture;
+          if (!fc || !fc.cropped || !fc.track.cropTo) return;
+          fc.track.cropTo(fs ? null : fc.cropTarget).catch(() => {});
+        };
+        onChange();
+        document.addEventListener('fullscreenchange', onChange);
+        document.addEventListener('webkitfullscreenchange', onChange);
+        return () => {
+          document.removeEventListener('fullscreenchange', onChange);
+          document.removeEventListener('webkitfullscreenchange', onChange);
+        };
+      }, [frameCapture]);
 
       // Pasted or uploaded screenshots: works in any browser, for any source
       const attachImage = (file) => {
