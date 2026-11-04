@@ -1083,9 +1083,16 @@
         setPinnedInput(value ? formatTime(value.seconds) : '');
       };
 
+      // Drive's player can't be paused from here, so say so the first few times instead of doing nothing
+      const driveHintCount = useRef(0);
       const pinNow = ({ pause = settings.autoPause } = {}) => {
         setPinned({ seconds: Math.floor(getActiveSeconds()), screenshot: captureFrame() });
-        if (pause) pausePlayback();
+        if (!pause) return;
+        pausePlayback();
+        if (sourceMode === 'gdrive' && gdriveId && driveHintCount.current < 3) {
+          driveHintCount.current += 1;
+          showToast("Pause the video in Drive's player while you write. Your time is already locked in.", { duration: 5000 });
+        }
       };
 
       const ensurePinned = () => {
