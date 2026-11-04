@@ -52,17 +52,20 @@ CSS = """
  :root{--ink:#1f2933;--muted:#5a6672;--accent:#7a2e2e;--bg:#f7f4ee;--card:#fff;--line:#e3ddd2}
  *{box-sizing:border-box}
  body{margin:0;font-family:Georgia,'Times New Roman',serif;background:var(--bg);color:var(--ink);line-height:1.6}
- .wrap{max-width:760px;margin:0 auto;padding:3rem 1.5rem 5rem}
- header{border-bottom:2px solid var(--accent);padding-bottom:1.25rem;margin-bottom:2rem}
- h1{font-size:2rem;margin:0 0 .25rem;letter-spacing:.5px}
+ .wrap{max-width:980px;margin:0 auto;padding:1.4rem 1.5rem 2.5rem}
+ header{border-bottom:2px solid var(--accent);padding-bottom:.6rem;margin-bottom:.9rem}
+ h1{font-size:1.5rem;margin:0 0 .15rem;letter-spacing:.5px}
  .subtitle{color:var(--muted);font-style:italic;margin:0}
- .note{background:#fdf6e3;border:1px solid var(--line);border-left:4px solid var(--accent);padding:.9rem 1.1rem;border-radius:6px;font-size:.95rem;color:var(--muted);margin-bottom:2rem}
- .card{display:flex;align-items:center;gap:1rem;width:100%;text-align:left;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:1.1rem 1.3rem;margin:0 0 1rem;cursor:pointer;font-family:inherit;color:var(--ink)}
+ .note{background:#fdf6e3;border:1px solid var(--line);border-left:4px solid var(--accent);padding:.55rem .9rem;border-radius:6px;font-size:.88rem;line-height:1.45;color:var(--muted);margin:0 0 .9rem}
+ #picker{display:grid;grid-template-columns:1fr;gap:.6rem}
+ @media (min-width:720px){#picker{grid-template-columns:1fr 1fr}}
+ .card{display:flex;align-items:center;gap:.7rem;width:100%;text-align:left;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:.65rem .95rem;margin:0;cursor:pointer;font-family:inherit;color:var(--ink)}
+ .card:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
  .card:hover{border-color:var(--accent);box-shadow:0 4px 14px rgba(0,0,0,.06)}
  .tag{font-size:.7rem;font-weight:700;letter-spacing:.5px;color:#fff;background:var(--accent);padding:.3rem .5rem;border-radius:5px;font-family:-apple-system,system-ui,sans-serif}
- .title{font-size:1.15rem;font-weight:700}
- .empty{text-align:center;color:var(--muted);font-style:italic;padding:2.5rem 1rem;border:2px dashed var(--line);border-radius:10px}
- footer{margin-top:3rem;text-align:center;color:var(--muted);font-size:.8rem;font-family:-apple-system,system-ui,sans-serif}
+ .title{font-size:1rem;font-weight:700;line-height:1.3}
+ .empty{grid-column:1/-1;text-align:center;color:var(--muted);font-style:italic;padding:2.5rem 1rem;border:2px dashed var(--line);border-radius:10px}
+ footer{margin-top:1.4rem;text-align:center;color:var(--muted);font-size:.8rem;font-family:-apple-system,system-ui,sans-serif}
  .viewer{position:fixed;inset:0;background:#525659;display:none;flex-direction:column;z-index:50}
  .vbar{flex:0 0 auto;background:var(--accent);color:#fff;padding:.5rem 1rem;display:flex;align-items:center;gap:.9rem;font-family:-apple-system,system-ui,sans-serif}
  .vbar button{background:transparent;color:#fff;border:1px solid rgba(255,255,255,.55);padding:.3rem .7rem;border-radius:6px;font-size:.9rem;cursor:pointer;white-space:nowrap}
@@ -270,9 +273,8 @@ HEAD = (
     "<title>%TITLE%</title>\n<style>" + CSS + "</style></head>\n"
     '<body><div class="wrap">\n'
     "<header><h1>%TITLE%</h1><p class=\"subtitle\">Texts available during this quiz</p></header>\n"
-    '<p class="note">Click a text below to read it. Inside a text, use the search box to jump to a page, or the define box to look up a word.</p>\n'
-    '<p class="note"><b>Chromebook tip:</b> if this site goes full screen and you can\'t get back to your exam, '
-    'press <b>Ctrl&nbsp;+&nbsp;Tab</b> to switch back.</p>\n'
+    '<p class="note">Click a text to open it. Inside a text, the search box jumps to a page and the define box looks up a word. '
+    '<b>Chromebook tip:</b> if this site goes full screen and you can\'t get back to your exam, press <b>Ctrl&nbsp;+&nbsp;Tab</b>.</p>\n'
 ).replace("%TITLE%", TITLE)
 
 FOOT = "<footer>Mountain View High School · English</footer>\n</div>" + APP + "\n</body></html>\n"
