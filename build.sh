@@ -26,9 +26,12 @@ build_course "Philosophy in Lit Reading Room" "texts/philosophy" "philosophy"
 # make-up students using the main room never see the model essay.
 build_course "AmLit Revision Room"            "texts/amlit-revision" "amlit-revision"
 build_course "Unit 1 Summative Writing Assessment Revision Room" "texts/amlit-unit1-revision" "amlit-unit1-revision"
+# Unlinked: texts for the Unit 4 ethics pilot seminar (spring 2027).
+build_course "Film Analysis- Ethics"            "texts/film-analysis-ethics" "film-analysis-ethics"
 
 echo "==> Done."
 echo "   American Lit: https://jbells17.github.io/class-texts/"
 echo "   Philosophy:   https://jbells17.github.io/class-texts/philosophy/"
 echo "   AmLit Revision: https://jbells17.github.io/class-texts/amlit-revision/"
 echo "   Unit 1 Revision: https://jbells17.github.io/class-texts/amlit-unit1-revision/"
+echo "   Film Analysis- Ethics: https://jbells17.github.io/class-texts/film-analysis-ethics/"
